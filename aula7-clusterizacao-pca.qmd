@@ -1,0 +1,1029 @@
+---
+title: "Aprendizado Não Supervisionado"
+subtitle: "Clusterização e Redução de Dimensionalidade (PCA)"
+author: "Aula 7"
+format:
+  revealjs:
+    theme: simple
+    slide-level: 2
+    smaller: true
+    scrollable: true
+execute:
+  echo: true
+  warning: false
+  message: false
+editor:
+  markdown:
+    wrap: 72
+---
+
+# Abertura e dados
+
+## A pergunta mudou (de novo)
+
+Nas Aulas 3 a 6, sempre tínhamos um **rótulo** (alvo):
+
+- **Regressão:** prever o preço do imóvel (número contínuo)
+- **Classificação:** o mandante vence? (sim/não)
+
+Hoje, **não existe rótulo**. Ninguém nos disse quais países são
+"desenvolvidos", "em desenvolvimento" ou "em crise".
+
+> **Pergunta do dia:** *Sem rótulo, como agrupar países com perfis
+> parecidos? E como visualizar 8 variáveis num gráfico 2D?*
+
+Isso é **Aprendizado Não Supervisionado** — o modelo descobre padrões
+sozinho, sem "gabarito".
+
+## O dataset: indicadores de desenvolvimento
+
+```{r}
+#| label: setup
+library(tidyverse)    # ← manipulação de dados e gráficos
+library(tidymodels)   # ← recipes, workflows
+library(tidyclust)    # ← clusterização no padrão tidymodels
+library(plotly)       # ← gráficos interativos
+library(factoextra)   # ← visualização de clusters (fviz_*)
+
+countries <- read_csv("Country-data.csv")
+
+glimpse(countries)
+```
+
+- **167 países** com 8 indicadores socioeconômicos
+- Fonte: UNICEF / Banco Mundial (dados reais)
+- **Sem rótulo de classe** — o modelo vai descobrir os grupos
+
+## As 8 variáveis
+
+| Variável | O que mede | Unidade |
+|----------|-----------|---------|
+| `child_mort` | Mortalidade infantil (por 1.000 nascidos vivos) | taxa |
+| `exports` | Exportações (% do PIB) | % |
+| `health` | Gastos com saúde (% do PIB) | % |
+| `imports` | Importações (% do PIB) | % |
+| `income` | Renda per capita | USD |
+| `inflation` | Inflação anual | % |
+| `life_expec` | Expectativa de vida | anos |
+| `total_fer` | Taxa de fertilidade total | filhos/mulher |
+| `gdpp` | PIB per capita | USD |
+
+::: fragment
+Perceba que **as escalas são muito diferentes**: mortalidade infantil vai
+de 2 a 190, enquanto PIB per capita vai de 231 a 80.600. Isso **importa
+muito** para clusterização!
+:::
+
+# Bloco 1 — Preparação e EDA
+
+## Por que as escalas importam?
+
+Clusterização agrupa por **distância** entre os pontos. Se uma variável
+tem valores muito maiores, ela **domina** a distância:
+
+- PIB per capita varia de 231 a 80.600 (amplitude ≈ 80.000)
+- Expectativa de vida varia de 50 a 83 (amplitude ≈ 33)
+
+Sem padronização, o PIB dominaria completamente o agrupamento — as
+outras variáveis seriam praticamente ignoradas.
+
+::: callout-note
+## A regra de ouro
+
+**Antes de calcular distâncias, padronize as variáveis** para que todas
+tenham a mesma "voz" na decisão do agrupamento.
+:::
+
+## EDA: distribuições das variáveis
+
+```{r}
+#| label: eda-violin
+#| fig-height: 6
+countries_long <- countries |>
+  pivot_longer(-country, names_to = "variavel", values_to = "valor")
+
+violin_plot <- ggplot(countries_long, aes(x = variavel, y = valor,
+                                          fill = variavel)) +
+  geom_violin(alpha = 0.4) +
+  geom_boxplot(width = 0.15, notch = TRUE, outlier.alpha = 0.3) +
+  facet_wrap(~ variavel, scales = "free", ncol = 3) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        axis.title = element_blank(),
+        legend.position = "none") +
+  labs(title = "Distribuição dos indicadores (167 países)")
+
+ggplotly(violin_plot)
+```
+
+::: fragment
+Observe os **outliers** em mortalidade infantil e PIB — países extremos
+como Nigéria (mortalidade altíssima) e Luxemburgo (PIB altíssimo) podem
+formar clusters sozinhos.
+:::
+
+## EDA: correlações entre variáveis
+
+```{r}
+#| label: eda-corr
+#| fig-height: 5.5
+# Matriz de correlação para o heatmap
+cor_matrix <- countries |>
+  select(-country) |>
+  cor()
+
+# Transformar em formato longo para ggplot
+cor_long <- as_tibble(cor_matrix, rownames = "var1") |>
+  pivot_longer(-var1, names_to = "var2", values_to = "correlacao")
+
+corr_plot <- ggplot(cor_long, aes(x = var1, y = var2, fill = correlacao,
+                                  text = paste0(var1, " × ", var2, ": ",
+                                                round(correlacao, 2)))) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(correlacao, 1)), size = 3, color = "black") +
+  scale_fill_gradient2(low = "red", mid = "white", high = "steelblue",
+                       midpoint = 0) +
+  labs(title = "Correlações entre indicadores",
+       x = NULL, y = NULL, fill = "Cor") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(corr_plot, tooltip = "text")
+```
+
+::: fragment
+**Correlações fortes esperadas:** mortalidade infantil ↔ fertilidade
+(positiva), PIB ↔ renda (positiva), expectativa de vida ↔ mortalidade
+(negativa). Isso é importante para o PCA — variáveis correlacionadas
+podem ser "comprimidas" em poucos componentes.
+:::
+
+## Receita de pré-processamento
+
+Usamos uma **recipe** do tidymodels para preparar os dados:
+
+```{r}
+#| label: recipe
+# Separar o nome do país (não é uma feature numérica)
+paises_nomes <- countries$country                    # ← guardar para depois
+
+# Receita: normalizar todas as variáveis numéricas
+rec_cluster <- recipe(~ ., data = countries |> select(-country)) |>
+  step_normalize(all_numeric_predictors())           # ← média 0, desvio 1
+
+rec_prep <- prep(rec_cluster)                        # ← "cozinhar" a receita
+dados_norm <- bake(rec_prep, new_data = NULL)        # ← dados padronizados
+
+# Conferir: todas as variáveis agora têm média ≈ 0 e dp ≈ 1
+dados_norm |>
+  summarise(across(everything(), list(media = ~ round(mean(.x), 2),
+                                      dp = ~ round(sd(.x), 2)))) |>
+  pivot_longer(everything(),
+               names_to = c("variavel", ".value"),
+               names_sep = "_(?=[^_]+$)")
+```
+
+::: callout-tip
+## `step_normalize()` no tidymodels
+
+Equivale ao `scale()` do R base, mas dentro do pipeline do tidymodels.
+Isso garante que a mesma transformação seja aplicada consistentemente
+em treino e teste — sem *data leakage*.
+:::
+
+# Bloco 2 — K-Means
+
+## O que é K-Means? (intuição)
+
+K-Means agrupa os dados em **K grupos** seguindo uma lógica simples:
+
+1.  **Escolha K** centróides iniciais (pontos aleatórios)
+2.  **Atribua** cada país ao centróide mais próximo
+3.  **Recalcule** o centróide como a média dos pontos do grupo
+4.  **Repita** 2 e 3 até ninguém mais mudar de grupo
+
+::: fragment
+É como jogar K "ímãs" no espaço: cada ponto é atraído pelo ímã mais
+próximo, depois o ímã se move para o centro da sua turma, e repete até
+estabilizar.
+:::
+
+## K-Means com tidyclust
+
+```{r}
+#| label: kmeans-3
+# Especificar o modelo: K-Means com 3 clusters
+kmeans_spec <- k_means(num_clusters = 3) |>
+  set_engine("stats")
+
+# Ajustar diretamente nos dados (tidyclust não usa workflow)
+set.seed(42)
+kmeans_fit <- fit(kmeans_spec, ~ ., data = dados_norm)
+
+# Extrair as atribuições de cluster e juntar com os dados originais
+clusters_k3 <- extract_cluster_assignment(kmeans_fit) |>
+  bind_cols(countries)
+
+clusters_k3 |> count(.cluster)
+```
+
+::: fragment
+3 clusters de tamanhos diferentes — será que essa é a quantidade ideal?
+Vamos descobrir.
+:::
+
+## Visualizando os 3 clusters
+
+```{r}
+#| label: kmeans-plot
+#| echo: false
+#| fig-height: 5
+plot_k3 <- ggplot(clusters_k3, aes(x = child_mort, y = gdpp,
+                                   color = .cluster,
+                                   text = paste0(country, "\n",
+                                                 "Cluster: ", .cluster, "\n",
+                                                 "Mort. inf: ", child_mort, "\n",
+                                                 "PIB/cap: ", gdpp))) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_color_brewer(palette = "Set2") +
+  labs(title = "K-Means (K=3): Mortalidade Infantil × PIB per capita",
+       x = "Mortalidade infantil (por 1.000)",
+       y = "PIB per capita (USD)",
+       color = "Cluster") +
+  theme_minimal()
+
+ggplotly(plot_k3, tooltip = "text")
+```
+
+::: fragment
+Passe o mouse sobre cada ponto para ver o país. Faz sentido o
+agrupamento? Os países mais pobres e com alta mortalidade formam um
+grupo separado?
+:::
+
+## Quantos clusters? Método do cotovelo
+
+Não sabemos K de antemão. O **método do cotovelo** testa vários valores
+de K e procura onde a "melhora" diminui:
+
+```{r}
+#| label: elbow
+#| fig-height: 5
+# Calcular WSS (Within Sum of Squares) para K de 2 a 10
+# K=1 distorce a escala (WSS enorme) — o cotovelo aparece melhor a partir de K=2
+set.seed(42)
+wss_results <- tibble(k = 2:10) |>
+  mutate(
+    wss = map_dbl(k, ~ {
+      spec <- k_means(num_clusters = .x) |> set_engine("stats")
+      fit(spec, ~ ., data = dados_norm) |>
+        extract_fit_engine() |>
+        (\(x) x$tot.withinss)()
+    })
+  )
+
+# Calcular a queda relativa (quanto cada K melhora em relação ao anterior)
+wss_results <- wss_results |>
+  mutate(
+    queda = c(NA, -diff(wss) / wss[-n()] * 100)     # ← % de redução do WSS
+  )
+
+elbow_plot <- ggplot(wss_results, aes(x = k, y = wss,
+                                      text = paste0("K = ", k,
+                                                    "\nWSS = ", round(wss, 1),
+                                                    "\nQueda = ",
+                                                    ifelse(is.na(queda), "—",
+                                                           paste0(round(queda, 1), "%"))))) +
+  geom_line(linewidth = 1.2, color = "steelblue") +
+  geom_point(size = 3.5, color = "steelblue") +
+  geom_point(data = wss_results |> filter(k == 4),
+             size = 5, color = "red", shape = 1, stroke = 1.5) +
+  annotate("text", x = 5.5, y = wss_results$wss[which(wss_results$k == 4)],
+           label = "← cotovelo (K=4)", color = "red", fontface = "bold", hjust = 0) +
+  scale_x_continuous(breaks = 2:10) +
+  labs(title = "Método do Cotovelo",
+       x = "Número de clusters (K)",
+       y = "WSS (variância dentro dos clusters)") +
+  theme_minimal()
+
+ggplotly(elbow_plot, tooltip = "text")
+```
+
+::: fragment
+O "cotovelo" é onde a curva dobra — diminuir K a partir daí não melhora
+muito. K=3 parece uma boa escolha, mas vamos confirmar.
+:::
+
+## Quantos clusters? Silhueta (Silhouette)
+
+A **silhueta** mede o quão "bem encaixado" cada ponto está no seu
+cluster:
+
+- **+1:** ponto perfeitamente encaixado no seu grupo
+- **0:** ponto na fronteira entre dois grupos
+- **-1:** ponto provavelmente no grupo errado
+
+```{r}
+#| label: silhouette
+#| fig-height: 5
+# Calcular silhueta usando o pacote cluster (não tidyclust)
+library(cluster)
+dados_mat <- as.matrix(dados_norm)
+
+cluster_ids <- as.integer(clusters_k3$.cluster)       # ← vetor numérico de clusters
+sil <- cluster::silhouette(cluster_ids, dist(dados_mat))
+sil_df <- as_tibble(sil[, 1:3]) |>
+  mutate(cluster = factor(cluster))
+
+sil_df <- sil_df |> mutate(id = row_number())
+
+sil_plot <- ggplot(sil_df, aes(x = sil_width,
+                               y = reorder(id, sil_width),
+                               fill = cluster)) +
+  geom_col() +
+  geom_vline(xintercept = mean(sil_df$sil_width),
+             linetype = "dashed", color = "red") +
+  labs(title = paste0("Silhueta média: ",
+                       round(mean(sil_df$sil_width), 3)),
+       x = "Largura da silhueta",
+       y = "Países (ordenados)",
+       fill = "Cluster") +
+  theme_minimal()
+
+ggplotly(sil_plot)
+```
+
+::: callout-tip
+Silhueta média acima de **0.5** indica bom agrupamento. Abaixo de 0.3,
+os clusters estão "misturados" demais.
+:::
+
+## Perfil dos clusters: quem é quem?
+
+```{r}
+#| label: perfil-clusters
+#| fig-height: 5.5
+# Média de cada variável por cluster (dados originais, não padronizados)
+perfil <- clusters_k3 |>
+  group_by(.cluster) |>
+  summarise(across(where(is.numeric), mean)) |>
+  ungroup()
+
+# Formato longo para o heatmap
+perfil_long <- perfil |>
+  pivot_longer(-.cluster, names_to = "variavel", values_to = "media")
+
+perfil_plot <- ggplot(perfil_long,
+                      aes(x = .cluster, y = variavel,
+                          fill = media,
+                          text = paste0("Cluster ", .cluster,
+                                        "\n", variavel, ": ", round(media, 1)))) +
+  geom_tile(color = "white") +
+  geom_text(aes(label = round(media, 0)), size = 3.5, color = "black") +
+  scale_fill_gradient2(low = "red", mid = "white", high = "steelblue",
+                       midpoint = mean(unlist(perfil_long$media))) +
+  labs(title = "Perfil médio de cada cluster (valores originais)",
+       x = "Cluster", y = NULL, fill = "Valor") +
+  theme_minimal()
+
+ggplotly(perfil_plot, tooltip = "text")
+```
+
+::: fragment
+Passe o mouse para ver os valores. Consegue nomear cada cluster?
+Exemplo: "Países em crise", "Países emergentes", "Países
+desenvolvidos".
+:::
+
+## Tabela: características por cluster
+
+```{r}
+#| label: tabela-perfil
+perfil |>
+  mutate(.cluster = paste("Cluster", .cluster)) |>
+  knitr::kable(digits = 1,
+               caption = "Perfil médio de cada cluster (dados originais)")
+```
+
+## Países-alvo: quem precisa de ajuda?
+
+Se o objetivo é identificar países que mais precisam de ajuda humanitária
+(ONG), filtramos o cluster com **maior mortalidade infantil** e **menor
+PIB**:
+
+```{r}
+#| label: aid-target
+# Identificar o cluster mais vulnerável
+cluster_alvo <- perfil |>
+  slice_max(child_mort, n = 1) |>
+  pull(.cluster)
+
+# Listar os países desse cluster, ordenados por mortalidade infantil
+aid_target <- clusters_k3 |>
+  filter(.cluster == cluster_alvo) |>
+  arrange(desc(child_mort)) |>
+  select(country, child_mort, life_expec, gdpp, income, .cluster)
+
+knitr::kable(head(aid_target, 15), digits = 1,
+             caption = paste("Top 15 países do cluster mais vulnerável (Cluster",
+                             cluster_alvo, ")"))
+```
+
+::: callout-warning
+Esses são os países que uma ONG priorizaria para ajuda. Note que o
+**modelo descobriu isso sozinho** — sem ninguém dizer quais países eram
+"pobres".
+:::
+
+# Bloco 2b — K-Medoids (PAM)
+
+## K-Means vs K-Medoids: qual a diferença?
+
+O **K-Means** usa a **média** dos pontos como centro do cluster (centróide).
+O **K-Medoids** (PAM — Partitioning Around Medoids) usa um **ponto real** do
+dataset como centro (medóide).
+
+::: fragment
+**Analogia:** K-Means é como definir o "centro" de uma sala pela média
+das posições de todos — o centro pode cair numa mesa. K-Medoids escolhe
+uma **pessoa real** como referência — o "centro" é sempre alguém que
+existe.
+:::
+
+## Por que K-Medoids?
+
+| Aspecto | K-Means | K-Medoids (PAM) |
+|---------|---------|-----------------|
+| **Centro** | Média (pode não ser um ponto real) | Ponto real do dataset |
+| **Sensível a outliers** | ✅ Sim (a média é puxada por extremos) | ❌ Mais robusto |
+| **Distância** | Só Euclidiana | Qualquer distância |
+| **Velocidade** | ⭐⭐⭐⭐⭐ Rápido | ⭐⭐⭐ Mais lento |
+
+::: callout-tip
+**Quando preferir K-Medoids:** quando há outliers fortes ou quando a
+distância não é Euclidiana (ex: distância de Manhattan).
+:::
+
+## K-Medoids na prática (PAM)
+
+```{r}
+#| label: kmedoids-fit
+library(cluster)
+
+# PAM = Partitioning Around Medoids (implementação de K-Medoids)
+set.seed(42)
+pam_result <- pam(dados_mat, k = 3)
+
+# Atribuições de cluster + dados originais
+clusters_pam <- countries |>
+  mutate(.cluster = factor(pam_result$clustering))
+
+# Os medóides (países-representantes de cada cluster)
+medoides <- countries[pam_result$id.med, ] |>
+  mutate(.cluster = factor(1:3)) |>
+  select(country, .cluster, child_mort, life_expec, gdpp)
+
+knitr::kable(medoides, digits = 1,
+             caption = "Medóides: país-representante de cada cluster")
+```
+
+::: fragment
+Os medóides são países **reais** que melhor representam cada grupo — não
+são médias abstratas.
+:::
+
+## K-Means vs K-Medoids: visualização
+
+```{r}
+#| label: kmeans-vs-kmedoids
+#| echo: false
+#| fig-height: 5.5
+plot_km <- clusters_k3 |>
+  mutate(metodo = "K-Means") |>
+  rename(cluster = .cluster) |>
+  select(country, child_mort, gdpp, cluster, metodo)
+
+plot_pam <- clusters_pam |>
+  mutate(metodo = "K-Medoids",
+         cluster = factor(as.character(.cluster))) |>
+  select(country, child_mort, gdpp, cluster, metodo)
+
+plot_compare <- bind_rows(plot_km, plot_pam)
+
+comp_plot <- ggplot(plot_compare, aes(x = child_mort, y = gdpp,
+                                      color = cluster,
+                                      text = paste0(country, "\n",
+                                                    metodo, "\n",
+                                                    "Cluster: ", cluster, "\n",
+                                                    "Mort. inf: ", child_mort, "\n",
+                                                    "PIB/cap: ", gdpp))) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  scale_color_brewer(palette = "Set2") +
+  facet_wrap(~ metodo) +
+  labs(title = "K-Means vs K-Medoids: Mortalidade Infantil × PIB per capita",
+       x = "Mortalidade infantil (por 1.000)",
+       y = "PIB per capita (USD)",
+       color = "Cluster") +
+  theme_minimal()
+
+ggplotly(comp_plot, tooltip = "text")
+```
+
+::: fragment
+Passe o mouse sobre cada ponto! Os agrupamentos são parecidos? K-Medoids
+tende a ser mais robusto a outliers — países extremos (como Nigéria ou
+Luxemburgo) têm menos influência na posição do medóide do que do centróide.
+:::
+
+## Comparação: mesmos países, clusters diferentes?
+
+```{r}
+#| label: concordancia
+#| fig-height: 4
+# Quantos países estão no mesmo cluster nos dois métodos?
+comparacao <- clusters_k3 |>
+  select(country, kmeans = .cluster) |>
+  left_join(clusters_pam |> select(country, kmedoids = .cluster),
+            by = "country") |>
+  mutate(mesmo_grupo = kmeans == as.character(kmedoids))
+
+n_iguais <- sum(comparacao$mesmo_grupo)
+n_total <- nrow(comparacao)
+
+cat(paste0("Países no mesmo cluster: ", n_iguais, " de ", n_total,
+           " (", round(n_iguais/n_total*100), "%)\n"))
+```
+
+::: callout-note
+Se a concordância for alta (\>80%), os dois métodos concordam — o
+resultado é robusto. Se for baixa, outliers estão influenciando o
+K-Means.
+:::
+
+# Bloco 3 — DBSCAN
+
+## K-Means assume clusters redondos — e se não forem?
+
+O K-Means funciona bem quando os grupos são **esféricos** (bolhas no
+espaço). Mas e se os dados formarem **formas irregulares** — um anel,
+uma espiral, uma faixa diagonal?
+
+::: fragment
+Aí entra o **DBSCAN** (Density-Based Spatial Clustering of Applications
+with Noise) — ele agrupa por **densidade**, não por distância ao centro.
+:::
+
+## O que é DBSCAN? (intuição)
+
+DBSCAN tem dois parâmetros:
+
+- **eps:** o raio de busca — quão longe olhar ao redor de cada ponto
+- **min_pts:** quantos vizinhos mínimos para considerar um ponto como
+  "núcleo" de um grupo
+
+A lógica:
+
+1.  Se um ponto tem pelo menos `min_pts` vizinhos dentro de `eps` →
+    **ponto de núcleo**
+2.  Vizinhos de pontos de núcleo são absorvidos no mesmo grupo
+3.  Pontos isolados (sem vizinhos suficientes) → **ruído** (cluster 0)
+
+::: callout-tip
+**Vantagem:** o DBSCAN descobre K sozinho — não precisa dizer quantos
+grupos existem. E detecta **outliers** como ruído automaticamente.
+:::
+
+## DBSCAN na prática
+
+```{r}
+#| label: dbscan-fit
+library(dbscan)
+
+# eps e min_pts precisam ser escolhidos com cuidado
+# Uma forma de estimar eps: gráfico da distância do k-ésimo vizinho
+set.seed(42)
+knn_dist <- kNNdist(dados_mat, k = 4)               # ← distância do 4º vizinho
+
+knn_plot <- tibble(dist = sort(knn_dist), ponto = seq_along(knn_dist)) |>
+  ggplot(aes(x = ponto, y = dist,
+             text = paste0("Ponto ", ponto, ": d = ", round(dist, 2)))) +
+  geom_line(color = "steelblue", linewidth = 1) +
+  geom_hline(yintercept = 1.5, linetype = "dashed", color = "red") +
+  annotate("text", x = nrow(dados_mat) * 0.8, y = 1.6,
+           label = "eps ≈ 1.5", color = "red") +
+  labs(title = "Gráfico k-distância (k=4)",
+       x = "Pontos ordenados",
+       y = "Distância do 4º vizinho mais próximo") +
+  theme_minimal()
+
+ggplotly(knn_plot, tooltip = "text")
+```
+
+::: fragment
+O "cotovelo" nesse gráfico sugere um bom valor de `eps`. A partir daí,
+as distâncias explodem — esses são os outliers.
+:::
+
+## Executando o DBSCAN
+
+```{r}
+#| label: dbscan-run
+set.seed(42)
+db_result <- dbscan(dados_mat, eps = 1.5, minPts = 4)
+
+# Atribuições de cluster (0 = ruído)
+clusters_db <- countries |>
+  select(country) |>
+  mutate(cluster_db = factor(db_result$cluster))
+
+clusters_db |>
+  count(cluster_db) |>
+  mutate(tipo = if_else(cluster_db == "0", "Ruído (outlier)",
+                        paste("Cluster", cluster_db)))
+```
+
+::: fragment
+O cluster **0** é o grupo dos "excluídos" — países que não se encaixam
+bem em nenhum grupo. São os outliers que o K-Means forçaria a entrar em
+algum cluster.
+:::
+
+## K-Means vs DBSCAN: visualização
+
+```{r}
+#| label: kmeans-vs-dbscan
+#| echo: false
+#| fig-height: 5.5
+# Dados para comparação
+plot_data <- clusters_k3 |>
+  select(country, child_mort, gdpp, .cluster) |>
+  rename(kmeans = .cluster) |>
+  left_join(clusters_db |> rename(dbscan = cluster_db), by = "country") |>
+  mutate(
+    dbscan = fct_recode(dbscan, "Ruído" = "0"),
+    metodo_kmeans = "K-Means (K=3)",
+    metodo_dbscan = "DBSCAN (eps=1.5)"
+  ) |>
+  pivot_longer(c(metodo_kmeans, metodo_dbscan),
+               names_to = "metodo_col", values_to = "metodo") |>
+  mutate(
+    cluster_label = if_else(metodo_col == "metodo_kmeans",
+                            as.character(kmeans),
+                            as.character(dbscan))
+  )
+
+comp_plot <- ggplot(plot_data, aes(x = child_mort, y = gdpp,
+                                   color = cluster_label,
+                                   text = paste0(country, "\n", metodo))) +
+  geom_point(size = 2.5, alpha = 0.8) +
+  scale_color_brewer(palette = "Set2") +
+  facet_wrap(~ metodo) +
+  labs(title = "K-Means vs DBSCAN: Mortalidade Infantil × PIB per capita",
+       x = "Mortalidade infantil (por 1.000)",
+       y = "PIB per capita (USD)",
+       color = "Cluster") +
+  theme_minimal()
+
+ggplotly(comp_plot, tooltip = "text")
+```
+
+::: fragment
+O DBSCAN detectou **ruído** — países que o K-Means agrupou à força.
+Mas para este dataset (indicadores socioeconômicos), os clusters são
+relativamente esféricos, então o K-Means funciona bem.
+:::
+
+## Quando usar cada algoritmo?
+
+| Critério | K-Means | DBSCAN |
+|----------|---------|--------|
+| **Precisa escolher K?** | ✅ Sim | ❌ Não (descobre sozinho) |
+| **Clusters esféricos** | ✅ Excelente | ⚠️ Funciona, mas não é o forte |
+| **Clusters irregulares** | ❌ Falha | ✅ Excelente |
+| **Detecta outliers** | ❌ Força todos em grupos | ✅ Classifica como ruído |
+| **Escalabilidade** | ✅ Rápido | ⚠️ Mais lento em datasets grandes |
+| **Parâmetros** | Só K | eps + min_pts (mais sensível) |
+
+::: callout-tip
+**Regra de bolso:** comece com K-Means (simples e rápido). Se os
+clusters parecerem forçados ou se houver muitos outliers, teste o DBSCAN.
+:::
+
+# Bloco 4 — PCA (Análise de Componentes Principais)
+
+## O problema das muitas dimensões
+
+Temos **8 variáveis** por país. Para visualizar tudo de uma vez,
+precisaríamos de um gráfico em **8 dimensões** — impossível!
+
+Gráficos 2D mostram só 2 variáveis por vez (mortalidade × PIB, por
+exemplo). Perdemos a visão do conjunto.
+
+> **PCA** resolve isso: "comprime" 8 variáveis em 2 ou 3 **componentes
+> principais** que capturam a maior parte da informação.
+
+## O que é PCA? (intuição)
+
+PCA encontra as **direções de maior variação** nos dados:
+
+- **PC1** (1º componente): a direção onde os países **mais diferem** entre si
+- **PC2** (2º componente): a direção ortogonal com a 2ª maior variação
+- **PC3, PC4, ...:** cada um captura variação adicional
+
+::: fragment
+É como fotografar um objeto 3D: de um ângulo (PC1) você vê a maior
+parte do objeto; de outro (PC2), vê o que faltou. Com 2 fotos, você
+reconstrói uma boa ideia do objeto.
+:::
+
+## PCA com tidymodels (recipe)
+
+```{r}
+#| label: pca-recipe
+# Adicionar PCA à recipe (além da normalização)
+rec_pca <- recipe(~ ., data = countries |> select(-country)) |>
+  step_normalize(all_numeric_predictors()) |>
+  step_pca(all_numeric_predictors(), num_comp = 8)   # ← extrair todos os componentes
+
+rec_pca_prep <- prep(rec_pca)
+dados_pca <- bake(rec_pca_prep, new_data = NULL) |>
+  mutate(country = paises_nomes) |>
+  left_join(countries, by = "country")              # ← dados originais para colorir
+
+# As 2 primeiras componentes já explicam quanto da variância total?
+tidy(rec_pca_prep, number = 2) |>
+  filter(component %in% paste0("PC", 1:8)) |>
+  group_by(component) |>
+  summarise(variancia = sum(value^2)) |>
+  mutate(proporcao = variancia / sum(variancia),
+         acumulada = cumsum(proporcao)) |>
+  knitr::kable(digits = 3,
+               caption = "Variância explicada por componente principal")
+```
+
+## Scree plot: quantos componentes reter?
+
+```{r}
+#| label: scree-plot
+#| fig-height: 5
+var_exp <- tidy(rec_pca_prep, number = 2) |>
+  filter(component %in% paste0("PC", 1:8)) |>
+  group_by(component) |>
+  summarise(variancia = sum(value^2)) |>
+  mutate(proporcao = variancia / sum(variancia),
+         acumulada = cumsum(proporcao),
+         componente_num = row_number())
+
+scree <- ggplot(var_exp, aes(x = componente_num, y = proporcao,
+                             text = paste0("PC", componente_num,
+                                           "\nVariância: ",
+                                           round(proporcao * 100, 1), "%\n",
+                                           "Acumulada: ",
+                                           round(acumulada * 100, 1), "%"))) +
+  geom_col(fill = "steelblue", alpha = 0.7) +
+  geom_line(aes(y = acumulada), color = "red", linewidth = 1) +
+  geom_point(aes(y = acumulada), color = "red", size = 2) +
+  geom_hline(yintercept = 0.8, linetype = "dashed", color = "gray50") +
+  annotate("text", x = 5, y = 0.82, label = "80% acumulado",
+           color = "gray50") +
+  scale_x_continuous(breaks = 1:8) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "Scree Plot — Variância explicada por componente",
+       x = "Componente Principal",
+       y = "Proporção da variância") +
+  theme_minimal()
+
+ggplotly(scree, tooltip = "text")
+```
+
+::: fragment
+Quantos componentes precisamos para capturar **80% da informação**? Se
+PC1 + PC2 já explicam \~70%, podemos visualizar tudo em 2D com perda
+mínima.
+:::
+
+## Os países no espaço PCA (2D)
+
+```{r}
+#| label: pca-biplot
+#| echo: false
+#| fig-height: 6
+pca_plot <- ggplot(dados_pca, aes(x = PC1, y = PC2,
+                                  color = child_mort,
+                                  text = paste0(country, "\n",
+                                                "PC1: ", round(PC1, 2), "\n",
+                                                "PC2: ", round(PC2, 2), "\n",
+                                                "Mort. inf: ", child_mort, "\n",
+                                                "PIB/cap: ", gdpp))) +
+  geom_point(size = 3, alpha = 0.8) +
+  scale_color_gradient(low = "steelblue", high = "red",
+                       name = "Mortalidade\ninfantil") +
+  labs(title = "Países no espaço PCA (PC1 × PC2)",
+       x = paste0("PC1 (",
+                  round(var_exp$proporcao[1] * 100, 1), "%)"),
+       y = paste0("PC2 (",
+                  round(var_exp$proporcao[2] * 100, 1), "%)")) +
+  theme_minimal()
+
+ggplotly(pca_plot, tooltip = "text")
+```
+
+::: fragment
+Passe o mouse sobre cada ponto! Cada país é representado por sua
+posição nos dois componentes mais importantes. Países próximos no
+gráfico têm perfis semelhantes.
+:::
+
+## Contribuição das variáveis em cada componente
+
+```{r}
+#| label: pca-loadings
+#| fig-height: 5
+# Os "loadings" mostram quanto cada variável contribui para cada componente
+loadings <- tidy(rec_pca_prep, number = 2) |>
+  filter(component %in% c("PC1", "PC2")) |>
+  mutate(
+    terms = fct_reorder(terms, abs(value)),
+    componente = component
+  )
+
+loadings_plot <- ggplot(loadings, aes(x = terms, y = value,
+                                      fill = componente,
+                                      text = paste0(terms, " → ",
+                                                    componente, ": ",
+                                                    round(value, 3)))) +
+  geom_col(position = "dodge", width = 0.6) +
+  coord_flip() +
+  geom_hline(yintercept = 0, linetype = "dashed") +
+  labs(title = "Loadings: contribuição de cada variável nos componentes",
+       x = NULL, y = "Loading (peso)", fill = "Componente") +
+  theme_minimal()
+
+ggplotly(loadings_plot, tooltip = "text")
+```
+
+::: fragment
+**Como ler:** barras positivas no PC1 significam que valores altos
+daquela variável **empurram** o país para a direita do gráfico PCA.
+Barras negativas empurram para a esquerda.
+:::
+
+# Bloco 5 — PCA + Clustering
+
+## O melhor dos dois mundos
+
+Podemos usar o PCA para **visualizar** os clusters do K-Means em 2D:
+
+```{r}
+#| label: pca-clusters
+#| echo: false
+#| fig-height: 5.5
+# Juntar clusters com PCA
+dados_pca_clusters <- dados_pca |>
+  left_join(clusters_k3 |> select(country, .cluster), by = "country")
+
+pca_cluster_plot <- ggplot(dados_pca_clusters,
+                           aes(x = PC1, y = PC2,
+                               color = .cluster,
+                               text = paste0(country, "\n",
+                                             "Cluster: ", .cluster, "\n",
+                                             "PC1: ", round(PC1, 2), "\n",
+                                             "PC2: ", round(PC2, 2)))) +
+  geom_point(size = 3, alpha = 0.8) +
+  stat_ellipse(aes(group = .cluster), level = 0.90,
+               linetype = "dashed", linewidth = 0.8) +
+  scale_color_brewer(palette = "Set2", name = "Cluster") +
+  labs(title = "Clusters K-Means visualizados no espaço PCA",
+       x = paste0("PC1 (",
+                  round(var_exp$proporcao[1] * 100, 1), "%)"),
+       y = paste0("PC2 (",
+                  round(var_exp$proporcao[2] * 100, 1), "%)")) +
+  theme_minimal()
+
+ggplotly(pca_cluster_plot, tooltip = "text")
+```
+
+::: fragment
+As elipses mostram a "fronteira" aproximada de cada cluster no espaço
+reduzido. Países dentro da mesma elipse têm perfis socioeconômicos
+parecidos.
+:::
+
+## Heatmap: preparando os dados
+
+```{r}
+#| label: heatmap-prep
+#| echo: true
+# Ordenar países por cluster para o heatmap
+countries_heat <- clusters_k3 |>
+  arrange(.cluster) |>
+  select(-country, -.cluster) |>
+  scale() |>                                        # ← padronizar para o heatmap
+  as_tibble()
+
+# Reordenar para plotar
+countries_heat$country <- clusters_k3 |>
+  arrange(.cluster) |> pull(country)
+countries_heat$cluster <- clusters_k3 |>
+  arrange(.cluster) |> pull(.cluster)
+
+hm_long <- countries_heat |>
+  pivot_longer(-c(country, cluster), names_to = "variavel", values_to = "valor") |>
+  mutate(
+    country = fct_inorder(country),
+    variavel = factor(variavel, levels = c("child_mort", "total_fer",
+                                            "inflation", "imports",
+                                            "health", "exports",
+                                            "life_expec", "income", "gdpp"))
+  )
+```
+
+## Heatmap: todos os países × todos os indicadores
+
+```{r}
+#| label: heatmap-final
+#| echo: false
+#| fig-height: 8
+hm_plot <- ggplot(hm_long, aes(x = variavel, y = country,
+                               fill = valor,
+                               text = paste0(country, "\n",
+                                             variavel, ": ",
+                                             round(valor, 2), "\n",
+                                             "Cluster: ", cluster))) +
+  geom_tile(color = "white", linewidth = 0.2) +
+  scale_fill_gradient2(low = "red", mid = "white", high = "steelblue",
+                       midpoint = 0) +
+  labs(title = "Heatmap: todos os países × todos os indicadores",
+       x = NULL, y = NULL, fill = "Valor\npadronizado") +
+  theme_minimal() +
+  theme(axis.text.y = element_text(size = 5),
+        axis.text.x = element_text(angle = 45, hjust = 1))
+
+ggplotly(hm_plot, tooltip = "text")
+```
+
+::: callout-note
+## Como ler o heatmap
+
+- **Azul** = valor acima da média (indicador "bom" ou "alto")
+- **Vermelho** = valor abaixo da média
+- Os países estão **ordenados por cluster** — as "faixas" de cor mostram
+  os padrões de cada grupo
+:::
+
+# Fechamento
+
+## Resumo: o ciclo do aprendizado não supervisionado
+
+| Bloco | Técnica | O que aprendemos |
+|-------|---------|-----------------|
+| 1 | **EDA + Normalização** | Escalas importam! Padronizar antes de calcular distâncias |
+| 2 | **K-Means** | Agrupar em K grupos; cotovelo e silhueta para escolher K |
+| 3 | **DBSCAN** | Agrupar por densidade; detecta outliers automaticamente |
+| 4 | **PCA** | Comprimir 8 variáveis em 2 componentes para visualizar |
+| 5 | **PCA + Clusters** | Visualizar clusters no espaço reduzido; heatmap geral |
+
+## Supervisionado vs Não Supervisionado
+
+| Aspecto | Supervisionado (Aulas 3–6) | Não Supervisionado (Aula 7) |
+|---------|--------------------------|----------------------------|
+| **Tem rótulo?** | ✅ Sim (variável-alvo) | ❌ Não |
+| **Objetivo** | Prever/classificar | Descobrir padrões |
+| **Avaliação** | Métricas (MSE, AUROC, F1) | Subjetiva + silhueta |
+| **Exemplos** | Reg. Linear, Logística, Árvores, XGBoost | K-Means, DBSCAN, PCA |
+
+::: fragment
+No supervisionado, o modelo aprende **"dado X, qual é Y?"** No não
+supervisionado, o modelo responde **"quais X são parecidos entre si?"**
+:::
+
+## Ponte para o futuro
+
+O aprendizado não supervisionado é a base de:
+
+- **Segmentação de clientes** (marketing): agrupar por comportamento de compra
+- **Detecção de anomalias** (fraude): o DBSCAN identifica transações "estranhas"
+- **Sistemas de recomendação** (Netflix, Spotify): PCA reduz dimensões para encontrar similaridades
+- **Genômica e bioinformática**: agrupar genes por padrão de expressão
+
+::: callout-tip
+**Próxima aula (Aula 8):** Redes Neurais e Deep Learning — o modelo que
+aprende representações hierárquicas dos dados.
+:::
+
+## Resumo da aula
+
+1.  **Aprendizado Não Supervisionado** não tem rótulo — o modelo
+    descobre padrões sozinho
+2.  **Normalização** é essencial antes de calcular distâncias — sem
+    ela, variáveis com escalas maiores dominam o agrupamento
+3.  **K-Means** é simples e rápido: escolhe K centróides, atribui
+    pontos, recalcula, repete
+4.  **Cotovelo + Silhueta** são as ferramentas para escolher K — não
+    chute!
+5.  **DBSCAN** agrupa por densidade e detecta outliers — ideal quando
+    os clusters não são esféricos
+6.  **PCA** comprime muitas variáveis em poucos componentes — permite
+    visualizar dados multidimensionais em 2D
+7.  **A interpretação é do cientista** — o algoritmo agrupa, mas nomear
+    os clusters é trabalho humano
