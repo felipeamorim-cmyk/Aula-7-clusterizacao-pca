@@ -19,6 +19,152 @@ editor:
 
 # Abertura e dados
 
+## O que é Aprendizado Não Supervisionado?
+
+Nas aulas anteriores, o modelo sempre aprendia com **exemplos
+rotulados** — alguém dizia a resposta certa:
+
+- Aula 3: "este imóvel vale R$ 850 mil" → o modelo aprende a **prever
+  preços**
+- Aula 5: "o mandante venceu" → o modelo aprende a **classificar
+  vitórias**
+
+Isso é **Aprendizado Supervisionado**: um "supervisor" dá as respostas,
+e o modelo aprende a se aproximar delas.
+
+::: fragment
+Mas e quando **não existe resposta certa**? Quando ninguém nos disse
+quais países são "desenvolvidos", "emergentes" ou "em crise"?
+
+Aí entra o **Aprendizado Não Supervisionado** — o modelo **descobre
+padrões sozinho**, sem gabarito.
+:::
+
+## Supervisionado vs Não Supervisionado — a diferença fundamental
+
+| | Supervisionado (Aulas 3–6) | Não Supervisionado (Aula 7) |
+|---|---|---|
+| **Tem rótulo?** | ✅ Sim (variável-alvo conhecida) | ❌ Não |
+| **O que o modelo faz** | Aprende a mapear X → Y | Descobre estrutura nos dados |
+| **Pergunta** | "Dado X, qual é Y?" | "Quais X são parecidos entre si?" |
+| **Como avaliar** | Métricas objetivas (MSE, AUROC, F1) | Subjetiva + silhueta |
+| **Exemplos** | Reg. Linear, Logística, Árvores, XGBoost | K-Means, DBSCAN, PCA |
+
+::: callout-tip
+## Analogia
+
+**Supervisionado** = prova com gabarito. O professor dá as respostas,
+você aprende a acertar.
+
+**Não Supervisionado** = explorar um território desconhecido. Não tem
+mapa — você descobre os bairros caminhando.
+:::
+
+## O modelo NÃO recebe a resposta — e isso muda tudo
+
+Em todas as aulas anteriores, tínhamos uma variável chamada `alvo` ou
+`target`:
+
+- `preco` → regressão linear
+- `vitoria_mandante` → regressão logística
+- `resultado` → árvores e XGBoost
+
+O modelo era **treinado** para acertar esse alvo. Se errava, recebia
+uma "nota" (loss) e ajustava.
+
+::: fragment
+Hoje, **não existe alvo**. Temos 167 países com 8 indicadores — mas
+**ninguém disse** quem é "rico", "pobre" ou "emergente".
+
+O modelo precisa **descobrir os grupos** a partir dos dados, usando
+apenas a **distância** (ou similaridade) entre os países.
+:::
+
+## Analogia: organizando uma festa sem lista de convidados
+
+Imagine que 167 pessoas chegaram numa festa e você precisa **dividir
+em mesas** — mas não tem lista, não sabe quem é amigo de quem.
+
+Como você faz?
+
+::: fragment
+1.  **Olha para cada pessoa** — o que ela está vestindo, que idioma
+    fala, que idade aparenta
+2.  **Agrupa quem parece parecido** — pessoas com características
+    semelhantes na mesma mesa
+3.  **Ajusta** — se alguém ficou "no meio" de duas mesas, move para
+    a que faz mais sentido
+
+Isso é **clusterização** — e é exatamente o que K-Means faz com países!
+:::
+
+## Os dois pilares da aula de hoje
+
+O Aprendizado Não Supervisionado tem **duas grandes famílias**:
+
+::: columns
+::: {.column width="50%"}
+### 🔵 Clusterização
+
+**Descobrir grupos** (clusters) de dados similares.
+
+- K-Means: agrupa em K bolhas
+- K-Medoids: usa pontos reais como centro
+- DBSCAN: agrupa por densidade
+
+**Pergunta:** *quais países formam grupos naturais?*
+:::
+
+::: {.column width="50%"}
+### 🟢 Redução de Dimensionalidade
+
+**Comprimir** muitas variáveis em poucas, mantendo a informação.
+
+- PCA: encontra eixos de máxima variação
+- t-SNE, UMAP: outras técnicas (fora do escopo)
+
+**Pergunta:** *como visualizar 8 variáveis num gráfico 2D?*
+:::
+:::
+
+## Onde o Aprendizado Não Supervisionado é usado?
+
+Não é só teoria — está em todo lugar:
+
+| Aplicação | O que faz | Empresa/Setor |
+|-----------|-----------|---------------|
+| **Segmentação de clientes** | Agrupa consumidores por comportamento | Marketing, e-commerce |
+| **Detecção de fraude** | Identifica transações "estranhas" (outliers) | Bancos, cartões |
+| **Recomendação** | Encontra similaridades entre filmes/músicas | Netflix, Spotify |
+| **Genômica** | Agrupa genes por padrão de expressão | Bioinformática |
+| **Compressão de imagens** | PCA reduz dimensões mantendo qualidade | Fotografia, satélites |
+
+::: fragment
+**Na aula de hoje:** usamos para ajudar uma ONG a identificar quais
+países mais precisam de ajuda humanitária — sem que ninguém diga quais
+são "pobres".
+:::
+
+## Recap rápido: o que já sabemos (Aulas 3–6)
+
+Antes de começar, vamos relembrar os conceitos que **voltam** hoje:
+
+| Conceito | Onde vimos | Por que importa hoje |
+|----------|-----------|---------------------|
+| **Normalização** | Aula 3 (Lasso/Ridge) | Variáveis em escalas diferentes distorcem distâncias |
+| **Overfitting** | Aula 3–6 (sempre) | K grande demais = cada país vira seu próprio cluster |
+| **Pipeline tidymodels** | Aula 5–6 (recipes) | Usamos recipes para preparar dados aqui também |
+| **Train/test split** | Aula 5–6 (sempre) | Hoje é diferente: não temos "teste" com rótulo |
+
+::: callout-note
+## O que muda
+
+No supervisionado, avaliávamos com **métricas** (acurácia, AUROC, MSE).
+No não supervisionado, a avaliação é mais **subjetiva** — usamos
+ferramentas como silhueta e cotovelo, mas a **interpretação** dos
+clusters é trabalho do cientista.
+:::
+
 ## A pergunta mudou (de novo)
 
 Nas Aulas 3 a 6, sempre tínhamos um **rótulo** (alvo):

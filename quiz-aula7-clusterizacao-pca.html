@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aula 7 · Clusterização e PCA — Teste de Conhecimentos</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<style>
+  :root{
+    --ink:#1C1F2A;
+    --ink-soft:#565B6B;
+    --paper:#F6F5F1;
+    --paper-raised:#FFFFFF;
+    --line:#DEDBD2;
+    --gold:#A9791F;
+    --gold-soft:#F3E9D2;
+    --teal:#2F5496;
+    --good:#2F6B4F;
+    --good-soft:#E4F0E8;
+    --bad:#A23B33;
+    --bad-soft:#F6E4E1;
+    --serif:'Fraunces', Georgia, 'Times New Roman', serif;
+    --sans:'IBM Plex Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    --radius: 3px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#EDEBE4; --ink-soft:#B7B4AA; --paper:#17181D; --paper-raised:#1F2027;
+      --line:#33343C; --gold:#D9B463; --gold-soft:#332A18; --teal:#8FB3E0;
+      --good:#7FC79A; --good-soft:#173322; --bad:#E08A80; --bad-soft:#3A1F1C;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#EDEBE4; --ink-soft:#B7B4AA; --paper:#17181D; --paper-raised:#1F2027;
+    --line:#33343C; --gold:#D9B463; --gold-soft:#332A18; --teal:#8FB3E0;
+    --good:#7FC79A; --good-soft:#173322; --bad:#E08A80; --bad-soft:#3A1F1C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{
+    background:var(--paper); color:var(--ink); font-family:var(--sans);
+    min-height:100vh; line-height:1.5; -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:640px; margin:0 auto; padding:56px 24px 80px;}
+  .kicker{
+    font-size:13px; color:var(--gold); font-weight:600; margin:0 0 10px;
+    letter-spacing:0.02em;
+  }
+  h1{
+    font-family:var(--serif); font-weight:500; font-size:clamp(28px,5vw,40px);
+    line-height:1.15; margin:0 0 14px; color:var(--ink);
+  }
+  .sub{color:var(--ink-soft); font-size:16px; max-width:52ch; margin:0 0 36px;}
+  .card{
+    background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius);
+    padding:32px; margin-bottom:20px;
+  }
+  label{display:block; font-size:13px; color:var(--ink-soft); margin-bottom:6px; font-weight:500;}
+  input[type=text]{
+    width:100%; font-family:var(--sans); font-size:16px; padding:12px 14px;
+    border:1px solid var(--line); border-radius:var(--radius); background:transparent;
+    color:var(--ink); margin-bottom:20px;
+  }
+  input[type=text]:focus{outline:2px solid var(--gold); outline-offset:1px; border-color:var(--gold);}
+  .btn{
+    font-family:var(--sans); font-weight:600; font-size:15px; padding:13px 26px;
+    border-radius:var(--radius); border:1px solid transparent; cursor:pointer;
+    transition:transform .12s ease, opacity .12s ease;
+  }
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--gold); color:#211A08;}
+  .btn-primary:disabled{opacity:.4; cursor:not-allowed;}
+  .btn-ghost{background:transparent; border-color:var(--line); color:var(--ink);}
+  .btn-row{display:flex; gap:12px; justify-content:flex-end; margin-top:8px;}
+
+  .progress-track{height:3px; background:var(--line); border-radius:3px; margin-bottom:10px; overflow:hidden;}
+  .progress-fill{height:100%; background:var(--gold); transition:width .25s ease;}
+  .progress-label{font-size:13px; color:var(--ink-soft); margin-bottom:28px; font-weight:500;}
+
+  .q-prompt{font-family:var(--serif); font-size:22px; line-height:1.35; margin:0 0 24px; font-weight:500;}
+  .opt{
+    display:flex; align-items:flex-start; gap:12px; padding:14px 16px; margin-bottom:10px;
+    border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; font-size:15.5px;
+  }
+  .opt:hover{border-color:var(--gold);}
+  .opt.selected{border-color:var(--gold); background:var(--gold-soft);}
+  .opt input{margin-top:3px;}
+  .opt .letter{
+    font-family:var(--serif); font-weight:600; color:var(--gold); min-width:18px;
+  }
+
+  .score-block{text-align:center; padding:20px 0 8px;}
+  .score-num{font-family:var(--serif); font-size:64px; font-weight:500; margin:0; line-height:1;}
+  .score-label{color:var(--ink-soft); font-size:15px; margin-top:6px;}
+
+  .review-item{border-top:1px solid var(--line); padding:16px 0;}
+  .review-item:first-child{border-top:none;}
+  .review-head{display:flex; gap:10px; align-items:flex-start; font-size:15px; font-weight:500;}
+  .tag{
+    flex:none; font-size:11px; font-weight:600; padding:2px 8px; border-radius:20px;
+    margin-top:2px;
+  }
+  .tag.good{background:var(--good-soft); color:var(--good);}
+  .tag.bad{background:var(--bad-soft); color:var(--bad);}
+  .review-answers{margin:8px 0 0 0; font-size:14px; color:var(--ink-soft);}
+  .review-answers b{color:var(--ink); font-weight:600;}
+  .review-explanation{margin:8px 0 0 0; font-size:13.5px; color:var(--ink-soft); font-style:italic;}
+
+  footer{color:var(--ink-soft); font-size:13px; text-align:center; margin-top:40px;}
+  .hidden{display:none !important;}
+  a{color:var(--teal);}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- TELA 1: IDENTIFICAÇÃO -->
+  <section id="screen-start">
+    <p class="kicker">Aula 7 · Aprendizado Não Supervisionado</p>
+    <h1>K-Means, K-Medoids, DBSCAN e PCA</h1>
+    <p class="sub">Teste de 10 questões sobre o conteúdo da aula: aprendizado não supervisionado, algoritmos de clusterização e análise de componentes principais. Ao final, você poderá baixar um relatório em PDF com seu desempenho e o gabarito completo.</p>
+    <div class="card">
+      <label for="nome">Nome completo</label>
+      <input type="text" id="nome" placeholder="Seu nome como está na chamada">
+      <label for="ra">RA (opcional)</label>
+      <input type="text" id="ra" placeholder="Seu RA">
+      <div class="btn-row" style="justify-content:flex-start;">
+        <button class="btn btn-primary" onclick="iniciarTeste()">Começar o teste</button>
+      </div>
+    </div>
+    <footer>10 questões · sem tempo limite · uma tentativa por sessão</footer>
+  </section>
+
+  <!-- TELA 2: QUIZ -->
+  <section id="screen-quiz" class="hidden">
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    <p class="progress-label" id="progress-label">Questão 1 de 10</p>
+    <div class="card">
+      <p class="q-prompt" id="q-prompt"></p>
+      <div id="q-options"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-ghost hidden" id="btn-back" onclick="voltarQuestao()">Voltar</button>
+      <button class="btn btn-primary" id="btn-next" onclick="proximaQuestao()" disabled>Próxima</button>
+    </div>
+  </section>
+
+  <!-- TELA 3: RESULTADO -->
+  <section id="screen-result" class="hidden">
+    <p class="kicker">Resultado</p>
+    <h1 id="result-nome-heading">Seu desempenho</h1>
+    <div class="card score-block">
+      <p class="score-num" id="score-num">0/10</p>
+      <p class="score-label" id="score-label"></p>
+    </div>
+    <div class="card" id="review-list"></div>
+    <div class="btn-row" style="justify-content:flex-start; margin-bottom:40px;">
+      <button class="btn btn-primary" onclick="baixarPDF()">Baixar relatório em PDF</button>
+      <button class="btn btn-ghost" onclick="location.reload()">Refazer teste</button>
+    </div>
+    <footer>Gerado localmente no seu navegador — nenhum dado é enviado a um servidor.</footer>
+  </section>
+
+</div>
+
+<script>
+const QUESTOES = [
+  {
+    prompt: "Qual é a principal diferença entre Aprendizado Supervisionado e Não Supervisionado?",
+    options: [
+      "Supervisionado usa redes neurais; Não Supervisionado usa árvores",
+      "Supervisionado tem variável-alvo conhecida; Não Supervisionado descobre padrões sem rótulo",
+      "Supervisionado é mais preciso; Não Supervisionado é mais rápido",
+      "Não há diferença — são sinônimos"
+    ],
+    correct: 1,
+    explanation: "No supervisionado temos 'gabarito' (rótulo). No não supervisionado, o modelo explora os dados sozinho."
+  },
+  {
+    prompt: "Por que precisamos normalizar (padronizar) as variáveis antes de aplicar K-Means?",
+    options: [
+      "Porque o K-Means não aceita dados brutos",
+      "Para que todas as variáveis contribuam igualmente para o cálculo de distância",
+      "Para remover outliers automaticamente",
+      "Porque a normalização aumenta a velocidade do algoritmo"
+    ],
+    correct: 1,
+    explanation: "Sem normalizar, variáveis com escalas maiores (como PIB) dominariam a distância, tornando as outras irrelevantes."
+  },
+  {
+    prompt: "No K-Means, o que é um centróide?",
+    options: [
+      "Um ponto real do dataset que representa o cluster",
+      "A média de todos os pontos do cluster — um ponto abstrato",
+      "O ponto mais distante do cluster",
+      "A mediana dos valores de cada variável"
+    ],
+    correct: 1,
+    explanation: "O centróide é o 'centro de gravidade' do grupo: a média de todas as variáveis. Não corresponde a nenhum país real."
+  },
+  {
+    prompt: "O método do cotovelo (elbow method) serve para:",
+    options: [
+      "Escolher o learning rate ideal",
+      "Definir quantos clusters (K) usar, observando onde a redução do WSS diminui",
+      "Detectar outliers no dataset",
+      "Medir a qualidade da normalização"
+    ],
+    correct: 1,
+    explanation: "Testamos K=2 a 10 e procuramos onde a curva 'dobra' — adicionar mais clusters não melhora significativamente."
+  },
+  {
+    prompt: "A silhueta (silhouette) de um ponto mede:",
+    options: [
+      "A distância do ponto ao centróide do seu cluster",
+      "Quão próximo o ponto está do seu próprio cluster vs. do cluster vizinho mais próximo",
+      "Se o ponto é um outlier",
+      "A variância dentro do cluster"
+    ],
+    correct: 1,
+    explanation: "Silhueta +1 = perfeitamente encaixado; 0 = fronteira; -1 = provavelmente no cluster errado."
+  },
+  {
+    prompt: "Qual é a principal vantagem do K-Medoids (PAM) sobre o K-Means?",
+    options: [
+      "É mais rápido computacionalmente",
+      "Usa um ponto real do dataset como centro, sendo mais robusto a outliers",
+      "Funciona sem normalização dos dados",
+      "Encontra automaticamente o número ideal de clusters"
+    ],
+    correct: 1,
+    explanation: "O medóide é um país real que melhor representa o grupo. Isso torna o resultado mais interpretável e menos sensível a valores extremos."
+  },
+  {
+    prompt: "O DBSCAN difere do K-Means principalmente porque:",
+    options: [
+      "Usa mais variáveis que o K-Means",
+      "Agrupa por densidade e detecta outliers como ruído, sem precisar escolher K",
+      "Sempre encontra mais clusters que o K-Means",
+      "Só funciona com dados normalizados"
+    ],
+    correct: 1,
+    explanation: "O DBSCAN encontra regiões densas de pontos e classifica pontos isolados como ruído. Não precisa de K pré-definido."
+  },
+  {
+    prompt: "No PCA, o primeiro componente principal (PC1) captura:",
+    options: [
+      "A variável com maior valor numérico",
+      "A direção de maior variação nos dados",
+      "A variável mais correlacionada com o rótulo",
+      "A média de todas as variáveis"
+    ],
+    correct: 1,
+    explanation: "PC1 é o eixo ao longo do qual os países mais diferem entre si — a direção de máxima variância."
+  },
+  {
+    prompt: "Se PC1 + PC2 explicam 70% da variância total, isso significa que:",
+    options: [
+      "30% dos dados foram perdidos e não podem ser recuperados",
+      "Podemos visualizar os dados em 2D capturando 70% da informação original",
+      "Os outros 30% são outliers que devem ser removidos",
+      "O PCA funcionou mal e precisa ser refeito"
+    ],
+    correct: 1,
+    explanation: "Com 2 componentes capturamos 70% da informação. A perda de 30% é o preço de reduzir 8 dimensões para 2."
+  },
+  {
+    prompt: "No heatmap final da aula, os países estão ordenados por cluster e coloridos por valor padronizado. O que as 'faixas' de cor revelam?",
+    options: [
+      "Que todos os países são muito parecidos",
+      "Os padrões característicos de cada grupo — países no mesmo cluster têm assinaturas visuais semelhantes",
+      "Que a normalização falhou em alguns países",
+      "Que o PCA não funcionou para esse dataset"
+    ],
+    correct: 1,
+    explanation: "Cada cluster tem uma 'impressão digital' visual: o cluster 'em crise' tem faixa vermelha em PIB e azul em mortalidade, por exemplo."
+  }
+];
+
+let aluno = { nome: "", ra: "" };
+let atual = 0;
+let respostas = new Array(QUESTOES.length).fill(null);
+
+function iniciarTeste(){
+  const nome = document.getElementById('nome').value.trim();
+  if(!nome){ document.getElementById('nome').focus(); return; }
+  aluno.nome = nome;
+  aluno.ra = document.getElementById('ra').value.trim();
+  document.getElementById('screen-start').classList.add('hidden');
+  document.getElementById('screen-quiz').classList.remove('hidden');
+  renderQuestao();
+}
+
+function renderQuestao(){
+  const q = QUESTOES[atual];
+  document.getElementById('progress-label').textContent = `Questão ${atual+1} de ${QUESTOES.length}`;
+  document.getElementById('progress-fill').style.width = `${((atual)/QUESTOES.length)*100}%`;
+  document.getElementById('q-prompt').textContent = q.prompt;
+
+  const box = document.getElementById('q-options');
+  box.innerHTML = '';
+  const letras = ['A','B','C','D'];
+  q.options.forEach((texto, i) => {
+    const row = document.createElement('div');
+    row.className = 'opt' + (respostas[atual] === i ? ' selected' : '');
+    row.onclick = () => selecionar(i);
+    row.innerHTML = `<span class="letter">${letras[i]}</span><span>${texto}</span>`;
+    box.appendChild(row);
+  });
+
+  document.getElementById('btn-back').classList.toggle('hidden', atual === 0);
+  document.getElementById('btn-next').disabled = respostas[atual] === null;
+  document.getElementById('btn-next').textContent = atual === QUESTOES.length - 1 ? 'Finalizar teste' : 'Próxima';
+}
+
+function selecionar(i){
+  respostas[atual] = i;
+  renderQuestao();
+}
+
+function proximaQuestao(){
+  if(respostas[atual] === null) return;
+  if(atual < QUESTOES.length - 1){
+    atual++;
+    renderQuestao();
+  } else {
+    mostrarResultado();
+  }
+}
+
+function voltarQuestao(){
+  if(atual > 0){ atual--; renderQuestao(); }
+}
+
+function mostrarResultado(){
+  document.getElementById('screen-quiz').classList.add('hidden');
+  document.getElementById('screen-result').classList.remove('hidden');
+
+  let acertos = 0;
+  QUESTOES.forEach((q, i) => { if(respostas[i] === q.correct) acertos++; });
+  const pct = Math.round((acertos/QUESTOES.length)*100);
+
+  document.getElementById('result-nome-heading').textContent = `Resultado de ${aluno.nome}`;
+  document.getElementById('score-num').textContent = `${acertos}/${QUESTOES.length}`;
+  document.getElementById('score-label').textContent = `${pct}% de acerto`;
+
+  const letras = ['A','B','C','D'];
+  const list = document.getElementById('review-list');
+  list.innerHTML = '';
+  QUESTOES.forEach((q, i) => {
+    const ok = respostas[i] === q.correct;
+    const item = document.createElement('div');
+    item.className = 'review-item';
+    const suaResp = respostas[i] === null ? '—' : `${letras[respostas[i]]}) ${q.options[respostas[i]]}`;
+    const certaResp = `${letras[q.correct]}) ${q.options[q.correct]}`;
+    item.innerHTML = `
+      <div class="review-head">
+        <span class="tag ${ok ? 'good' : 'bad'}">${ok ? 'Correto' : 'Incorreto'}</span>
+        <span>${i+1}. ${q.prompt}</span>
+      </div>
+      <p class="review-answers">Sua resposta: <b>${suaResp}</b>${ok ? '' : `<br>Resposta correta: <b>${certaResp}</b>`}</p>
+      <p class="review-explanation">${q.explanation}</p>
+    `;
+    list.appendChild(item);
+  });
+}
+
+function baixarPDF(){
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+  const pageW = doc.internal.pageSize.getWidth();
+  const pageH = doc.internal.pageSize.getHeight();
+  const marginX = 48;
+  let y = 56;
+
+  function checkPage(need){
+    if(y + need > pageH - 48){ doc.addPage(); y = 56; }
+  }
+  function addWrapped(text, x, width, size, opts){
+    opts = opts || {};
+    doc.setFontSize(size);
+    doc.setFont('helvetica', opts.bold ? 'bold' : 'normal');
+    const lines = doc.splitTextToSize(text, width);
+    lines.forEach(line => {
+      checkPage(size * 1.4);
+      doc.text(line, x, y);
+      y += size * 1.35;
+    });
+  }
+
+  let acertos = 0;
+  QUESTOES.forEach((q, i) => { if(respostas[i] === q.correct) acertos++; });
+  const pct = Math.round((acertos/QUESTOES.length)*100);
+  const letras = ['A','B','C','D'];
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(18);
+  doc.text('Aula 7 — Clusterização e PCA', marginX, y); y += 26;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(11);
+  doc.text('Relatório de desempenho — Teste de Conhecimentos', marginX, y); y += 24;
+
+  doc.setDrawColor(200); doc.line(marginX, y, pageW - marginX, y); y += 22;
+
+  doc.setFontSize(12);
+  doc.text(`Aluno: ${aluno.nome}`, marginX, y); y += 18;
+  if(aluno.ra){ doc.text(`RA: ${aluno.ra}`, marginX, y); y += 18; }
+  doc.text(`Data: ${new Date().toLocaleDateString('pt-BR')}`, marginX, y); y += 18;
+  doc.setFont('helvetica', 'bold');
+  doc.text(`Desempenho: ${acertos}/${QUESTOES.length} (${pct}%)`, marginX, y); y += 30;
+
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(14);
+  doc.text('Gabarito e revisão questão a questão', marginX, y); y += 20;
+
+  const usableW = pageW - marginX * 2;
+  QUESTOES.forEach((q, i) => {
+    checkPage(60);
+    const ok = respostas[i] === q.correct;
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(11.5);
+    doc.setTextColor(ok ? 40 : 160, ok ? 110 : 50, ok ? 70 : 45);
+    doc.text(`${i+1}. [${ok ? 'CORRETO' : 'INCORRETO'}]`, marginX, y);
+    doc.setTextColor(20,20,20);
+    y += 15;
+    addWrapped(q.prompt, marginX, usableW, 11, { bold: false });
+
+    const suaResp = respostas[i] === null ? 'Não respondida' : `${letras[respostas[i]]}) ${q.options[respostas[i]]}`;
+    addWrapped(`Resposta do aluno: ${suaResp}`, marginX, usableW, 10);
+    if(!ok){
+      const certaResp = `${letras[q.correct]}) ${q.options[q.correct]}`;
+      addWrapped(`Resposta correta: ${certaResp}`, marginX, usableW, 10, { bold: true });
+    }
+    doc.setFont('helvetica', 'italic');
+    addWrapped(`Por quê: ${q.explanation}`, marginX, usableW, 9.5);
+    y += 10;
+  });
+
+  const nomeArquivo = `relatorio_${aluno.nome.replace(/\s+/g,'_')}_Aula7.pdf`;
+  doc.save(nomeArquivo);
+}
+
+document.getElementById('nome').addEventListener('keydown', e => { if(e.key === 'Enter') iniciarTeste(); });
+</script>
+</body>
+</html>

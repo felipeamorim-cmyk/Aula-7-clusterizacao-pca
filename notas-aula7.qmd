@@ -1,0 +1,693 @@
+---
+title: "Notas de Aula 7 — Aprendizado Não Supervisionado"
+subtitle: "Clusterização e Redução de Dimensionalidade — FECAF"
+format:
+  docx:
+    toc: true
+    toc-depth: 3
+    number-sections: true
+    highlight-style: github
+---
+
+# Introdução
+
+Nas Aulas 3 a 6, sempre tivemos uma **"resposta certa"**:
+
+- Aula 3: prever o preço de um imóvel (um número)
+- Aula 5: prever se o mandante vence (sim/não)
+- Aula 6: melhorar essa previsão com árvores e ensembles
+
+Em todos esses casos, o modelo aprendia com **exemplos rotulados** —
+dados onde a gente já sabia a resposta. Isso se chama **Aprendizado
+Supervisionado**: o "supervisor" (nós) dá as respostas, e o modelo
+aprende a acertar.
+
+Hoje, a pergunta muda completamente:
+
+> **E quando não existe resposta certa? Quando ninguém nos disse quem é
+> quem?**
+
+Imagine que você tem dados de 167 países — mortalidade infantil, PIB,
+expectativa de vida, fertilidade, etc. — mas **ninguém te disse** quais
+são "desenvolvidos", "em desenvolvimento" ou "em crise". Você precisa
+**descobrir os grupos sozinho**, a partir dos dados.
+
+Isso é **Aprendizado Não Supervisionado** — e é o tema desta aula.
+
+Vamos aprender duas técnicas fundamentais:
+
+1.  **Clusterização** (agrupamento): K-Means, K-Medoids e DBSCAN — para
+    descobrir grupos de países parecidos
+2.  **PCA** (Análise de Componentes Principais): para "comprimir" 8
+    variáveis em 2 eixos e conseguir **visualizar** tudo num gráfico 2D
+
+O dataset da aula é o **Country-data**: 167 países com 8 indicadores
+socioeconômicos do UNICEF/Banco Mundial. O objetivo prático: ajudar uma
+ONG a identificar quais países mais precisam de ajuda humanitária — sem
+que ninguém diga quais são "pobres". O modelo descobre sozinho.
+
+---
+
+# Recap: O que já aprendemos (Aulas 3 a 6)
+
+## Aprendizado Supervisionado vs. Não Supervisionado
+
+Antes de mergulhar no conteúdo novo, vamos consolidar o que já vimos:
+
+| Aspecto | Supervisionado (Aulas 3–6) | Não Supervisionado (Aula 7) |
+|---|---|---|
+| **Tem rótulo?** | ✅ Sim (variável-alvo) | ❌ Não |
+| **Objetivo** | Prever/classificar algo conhecido | Descobrir padrões escondidos |
+| **Como avalia** | Métricas objetivas (MSE, AUROC, F1) | Subjetiva + silhueta |
+| **Exemplos** | Reg. Linear, Logística, Árvores, XGBoost | K-Means, DBSCAN, PCA |
+| **Analogia** | Prova com gabarito | Explorar um território desconhecido |
+
+**Analogia:** no supervisionado, é como aprender a dirigir com um
+instrutor: ele diz "vire à direita", "freio agora", "acelere". Você
+aprende porque tem feedback imediato. No não supervisionado, é como ser
+colocado numa cidade desconhecida sem mapa: você precisa **explorar** e
+**descobrir os bairros** por conta própria.
+
+## Os modelos que já conhecemos
+
+| Modelo | Tipo | Aula | O que faz |
+|---|---|---|---|
+| Regressão Linear | Superv. — Regressão | 3 | Prevê um número contínuo (preço, gols) |
+| Lasso / Ridge | Superv. — Regressão | 3-4 | Regressão + regularização (controla complexidade) |
+| Regressão Logística | Superv. — Classificação | 5 | Prevê probabilidade (sim/não) usando a sigmoide |
+| Árvore de Decisão | Superv. — Classificação | 6 | Fluxograma de perguntas (se/então) |
+| Random Forest | Superv. — Classificação | 6 | Ensemble de árvores independentes (bagging) |
+| XGBoost | Superv. — Classificação | 6 | Ensemble de árvores sequenciais (boosting) |
+
+Todos esses modelos tinham uma coisa em comum: **alguém disse a resposta
+certa** e o modelo aprendeu a se aproximar dela.
+
+## Conceitos que voltam hoje
+
+Três conceitos das aulas anteriores continuam importantes:
+
+1.  **Normalização** (padronizar as variáveis): vimos na Aula 3 com
+    Lasso/Ridge. Hoje, é **obrigatória** antes de calcular distâncias.
+2.  **Overfitting**: no supervisionado, o modelo decora o treino. Na
+    clusterização, o equivalente é escolher K grande demais — cada país
+    vira seu próprio cluster, o que não tem utilidade.
+3.  **Pipeline tidymodels** (recipe → model → evaluate): a mesma
+    filosofia de "receita" que usamos para preparar dados no
+    supervisionado continua valendo aqui.
+
+---
+
+# O Dataset: Country-data
+
+## Os dados
+
+Nosso dataset tem **167 países** com **8 indicadores socioeconômicos**:
+
+| Variável | O que mede | Exemplo de variação |
+|---|---|---|
+| `child_mort` | Mortalidade infantil (por 1.000 nascidos vivos) | 2 (Islândia) → 190 (Haiti) |
+| `exports` | Exportações (% do PIB) | 2% → 80% |
+| `health` | Gastos com saúde (% do PIB) | 2% → 13% |
+| `imports` | Importações (% do PIB) | 5% → 74% |
+| `income` | Renda per capita (USD) | 764 (Burundi) → 41.400 (EUA) |
+| `inflation` | Inflação anual (%) | -0.4% → 22.4% |
+| `life_expec` | Expectativa de vida (anos) | 50 → 83 |
+| `total_fer` | Taxa de fertilidade (filhos/mulher) | 1.2 → 7.6 |
+| `gdpp` | PIB per capita (USD) | 231 (Burundi) → 80.600 (Luxemburgo) |
+
+## Por que as escalas importam (muito!)
+
+Antes de qualquer análise, note algo crítico: **as variáveis têm
+escalas muito diferentes**.
+
+- Mortalidade infantil: varia de **2 a 190** (amplitude ≈ 188)
+- PIB per capita: varia de **231 a 80.600** (amplitude ≈ 80.000)
+
+Se calcularmos a distância entre dois países usando esses valores
+crus, o PIB vai **dominar completamente** o cálculo — as outras
+variáveis serão praticamente ignoradas.
+
+**Analogia:** imagine que você está comparando jogadores de futebol
+usando gols e faltas. Se gols vai de 0 a 30 e faltas vai de 0 a 150,
+a diferença em faltas sempre será maior — mesmo que gols seja mais
+importante para o que você quer medir.
+
+**Solução:** padronizar todas as variáveis para a mesma escala
+(**média 0, desvio padrão 1**) antes de calcular distâncias. Isso dá
+"voz igual" a todas as variáveis.
+
+## A receita de pré-processamento
+
+Usamos uma **recipe** do tidymodels — a mesma ferramenta das aulas
+anteriores:
+
+```r
+rec_cluster <- recipe(~ ., data = countries |> select(-country)) |>
+  step_normalize(all_numeric_predictors())
+```
+
+O `step_normalize()` transforma cada variável para ter **média 0** e
+**desvio padrão 1**. Depois disso, mortalidade infantil e PIB per
+capita estão "na mesma moeda" — e a distância entre países reflete
+**todas** as variáveis, não só a que tem números maiores.
+
+## EDA: distribuições
+
+Antes de modelar, sempre olhamos as distribuições:
+
+- **Mortalidade infantil:** bimodal? Muitos países com baixa mortalidade
+  e um grupo com alta mortalidade (África Subsaariana)
+- **PIB per capita:** distribuição muito enviesada à direita (poucos
+  países muito ricos, muitos com PIB baixo)
+- **Fertilidade:** bimodal — países desenvolvidos com ~1.5 filhos,
+  países em desenvolvimento com ~5 filhos
+
+Os **outliers** são esperados: Nigéria (mortalidade altíssima),
+Luxemburgo (PIB altíssimo), Catar (exportações altíssimas). Esses países
+podem "puxar" os clusters — é importante ter algoritmos robustos a
+eles.
+
+## EDA: correlações
+
+Algumas variáveis são **altamente correlacionadas**:
+
+- mortalidade infantil ↔ fertilidade: **+0.86** (países com muitos
+  filhos tendem a ter alta mortalidade infantil)
+- PIB ↔ renda: **+0.84** (óbvio — são medidas da mesma coisa)
+- expectativa de vida ↔ mortalidade infantil: **-0.89** (quanto mais se
+  vive, menos crianças morrem)
+- PIB ↔ mortalidade infantil: **-0.65** (países mais ricos têm menos
+  mortalidade)
+
+Essas correlações são **boas notícias para o PCA**: variáveis
+correlacionadas podem ser "comprimidas" em menos componentes, porque
+carregam informação redundante.
+
+---
+
+# K-Means: O Algoritmo Clássico
+
+## O que é K-Means? (intuição)
+
+K-Means é o algoritmo de clusterização **mais usado no mundo**. A
+lógica é surpreendentemente simples:
+
+1.  **Escolha K** (ex: K=3) — quantos grupos você quer
+2.  **Jogue K pontos aleatórios** no espaço — esses são os "centróides"
+    iniciais
+3.  **Cada país** vai para o centróide mais próximo
+4.  **Recalcule** o centróide como a média dos países que foram para lá
+5.  **Repita** passos 3 e 4 até ninguém mais mudar de grupo
+
+**Analogia dos ímãs:** imagine que você joga 3 ímãs numa mesa cheia de
+clips de metal. Cada clipe é atraído pelo ímã mais próximo. Depois que
+todos os clips estão agrupados, você move cada ímã para o centro da sua
+turma de clips. Aí os clips se reajustam (alguns podem mudar de ímã
+porque a posição mudou). Repita até estabilizar — pronto, você tem 3
+grupos.
+
+## O que é um "centróide"?
+
+O centróide é a **média** de todos os pontos do cluster. É o "centro
+de gravidade" do grupo.
+
+**Importante:** o centróide **não é um país real** — é um ponto
+abstrato, calculado como a média das variáveis. O "país médio" do
+cluster 1 pode ter mortalidade infantil de 15.3, PIB de 8.450, etc. —
+nenhum país tem exatamente esses valores.
+
+Isso é uma **limitação** do K-Means — veremos o K-Medoids (que usa
+pontos reais) mais adiante.
+
+## K-Means com tidyclust
+
+```r
+kmeans_spec <- k_means(num_clusters = 3) |>
+  set_engine("stats")
+
+set.seed(42)
+kmeans_fit <- fit(kmeans_spec, ~ ., data = dados_norm)
+
+clusters_k3 <- extract_cluster_assignment(kmeans_fit) |>
+  bind_cols(countries)
+```
+
+O `extract_cluster_assignment()` retorna a qual cluster cada país
+pertence. Juntamos com os dados originais para analisar os grupos com
+valores reais (não padronizados).
+
+## Método do Cotovelo: como escolher K?
+
+Não sabemos quantos clusters existem. O **método do cotovelo** testa
+vários valores de K (2 a 10) e mede o **WSS** (Within Sum of Squares) —
+a variância **dentro** dos clusters. Quanto menor o WSS, mais compactos
+são os grupos.
+
+**Analogia:** imagine que você está organizando uma festa e precisa
+dividir os convidados em mesas. Se você tem 2 mesas, cada mesa fica
+muito cheia (alta variância). Se tem 10 mesas, cada mesa fica vazia
+(baixa variância, mas muitas mesas). O "cotovelo" é o ponto onde
+adicionar mais mesas **não melhora muito** — é o equilíbrio entre
+poucas mesas e mesas compactas.
+
+O gráfico do cotovelo mostra K no eixo X e WSS no eixo Y. A curva
+**sempre desce** (mais clusters = menos variância), mas a partir de um
+certo ponto, a queda fica **suave** — esse é o cotovelo.
+
+No nosso dataset, o cotovelo aparece em torno de **K=4**: a partir daí,
+aumentar K melhora pouco o WSS.
+
+## Silhueta: quão bem os países estão agrupados?
+
+A **silhueta** (silhouette) mede, para cada país:
+
+- **Quão próximo** está dos outros países do **mesmo** cluster
+- **Quão distante** está dos países do cluster **vizinho** mais próximo
+
+O valor vai de **-1 a +1**:
+
+| Valor | Significado |
+|---|---|
+| **+1** | País perfeitamente encaixado no seu grupo |
+| **0** | País na fronteira entre dois grupos |
+| **-1** | País provavelmente no grupo errado |
+
+**Analogia:** imagine que você está numa sala dividida em 3 grupos.
+Se você está cercado de pessoas do seu grupo e longe dos outros grupos,
+sua silhueta é alta (+1). Se você está no meio de dois grupos, sem
+saber direito aonde pertence, sua silhueta é próxima de 0. Se você está
+mais parecido com o grupo vizinho do que com o seu, sua silhueta é
+negativa (-1) — você está no grupo errado!
+
+Uma **silhueta média acima de 0.5** indica bom agrupamento. Abaixo de
+0.3, os clusters estão "misturados" demais.
+
+## Perfil dos clusters: quem é quem?
+
+Depois de agrupar, a pergunta mais importante é: **o que cada grupo
+representa?**
+
+Calculamos a **média de cada variável** por cluster:
+
+| Cluster | Mort. Infantil | PIB per capita | Expectativa de Vida | Fertilidade |
+|---|---|---|---|---|
+| Países em crise | Alta (~70) | Baixo (~2.000) | Baixa (~60) | Alta (~4.5) |
+| Países emergentes | Média (~25) | Médio (~8.000) | Média (~72) | Média (~2.5) |
+| Países desenvolvidos | Baixa (~6) | Alto (~35.000) | Alta (~80) | Baixa (~1.7) |
+
+**Esses valores são reais** — não são padronizados. É assim que a ONG
+consegue dizer: "o cluster 1 tem mortalidade infantil 10x maior que o
+cluster 3 — esses são os países prioritários."
+
+## Países-alvo: quem precisa de ajuda?
+
+Filtrando o cluster mais vulnerável e ordenando por mortalidade
+infantil, encontramos países como:
+
+- **Haiti** (mortalidade infantil: 190, PIB: 1.280)
+- **Chade** (mortalidade: 150, PIB: 1.070)
+- **Nigéria** (mortalidade: 120, PIB: 2.410)
+- **Somália** (mortalidade: 116, PIB: 320)
+
+O modelo **descobriu isso sozinho** — ninguém disse que esses países
+eram "pobres". Ele olhou para os 8 indicadores e percebeu que esses
+países formam um grupo natural.
+
+---
+
+# K-Medoids (PAM): Uma Alternativa Robusta
+
+## Qual o problema do K-Means?
+
+O K-Means usa a **média** como centro do cluster. A média é **sensível
+a outliers**: um único país extremo (como Luxemburgo com PIB de 80.600)
+pode **puxar** o centróide para si e distorcer o grupo inteiro.
+
+**Analogia:** imagine uma sala com 10 pessoas normais e 1 bilionário.
+A "renda média" da sala vai ser alta — mas não representa ninguém. O
+K-Means sofre do mesmo problema: o centróide pode ser "puxado" por
+outliers.
+
+## O que é K-Medoids?
+
+O **K-Medoids** (implementado pelo algoritmo **PAM — Partitioning
+Around Medoids**) resolve isso: em vez de usar a média, ele escolhe um
+**ponto real** do dataset como centro de cada cluster. Esse ponto é
+chamado de **medóide**.
+
+**Analogia:** em vez de definir o "centro" da sala pela média das
+posições (que pode cair numa mesa), o K-Medoids escolhe uma **pessoa
+real** como referência — o "centro" é sempre alguém que existe.
+
+| Aspecto | K-Means | K-Medoids (PAM) |
+|---|---|---|
+| **Centro** | Média (ponto abstrato) | Ponto real do dataset |
+| **Sensível a outliers** | ✅ Sim (média é puxada) | ❌ Mais robusto |
+| **Distância** | Só Euclidiana | Qualquer distância |
+| **Velocidade** | Rápido | Mais lento (calcula pairwise distances) |
+
+## K-Medoids na prática
+
+```r
+library(cluster)
+pam_result <- pam(dados_mat, k = 3)
+```
+
+O PAM retorna os **medóides** — os países que melhor representam cada
+cluster. Por exemplo:
+
+- Cluster "em crise" → medóide: **República Centro-Africana**
+- Cluster "emergente" → medóide: **Tailândia**
+- Cluster "desenvolvido" → medóide: **Itália**
+
+Esses são países **reais** que funcionam como "embaixadores" do grupo.
+Se alguém perguntar "como é um país típico do cluster 1?", você pode
+dizer: "olhe para a República Centro-Africana".
+
+## K-Means vs K-Medoids: concordância
+
+Uma pergunta importante: os dois algoritmos concordam? Quantos países
+estão no mesmo cluster nos dois métodos?
+
+Se a concordância for **alta (>80%)**, o resultado é **robusto** — os
+outliers não estão influenciando muito. Se for baixa, o K-Means está
+sendo "enganado" por valores extremos.
+
+No nosso dataset, a concordância costuma ser alta (~85-90%), indicando
+que os clusters são **estáveis** — tanto o K-Means quanto o K-Medoids
+chegam a conclusões parecidas.
+
+## Quando preferir K-Medoids?
+
+- Quando há **outliers fortes** no dataset (países extremos)
+- Quando a distância não é Euclidiana (ex: Manhattan, Jaccard)
+- Quando você quer centros **interpretáveis** (países reais, não médias
+  abstratas)
+- Quando o dataset é **pequeno** (PAM é O(n²), K-Means é O(n))
+
+---
+
+# DBSCAN: Clusterização por Densidade
+
+## K-Means e K-Medoids assumem clusters "redondos" — e se não forem?
+
+Tanto K-Means quanto K-Medoids encontram clusters **esféricos** (bolhas
+no espaço). Mas e se os dados formarem **formas irregulares** — um
+anel, uma espiral, uma faixa diagonal?
+
+**Analogia:** imagine que você tem fotos de cidades distribuídas ao
+longo de uma costa. As cidades formam uma **linha curva**, não bolhas.
+K-Means tentaria forçar essa linha em 2-3 grupos redondos — e faria
+um trabalho ruim.
+
+Aí entra o **DBSCAN** (Density-Based Spatial Clustering of Applications
+with Noise): ele agrupa por **densidade** — regiões onde há muitos
+pontos próximos formam um cluster, e pontos isolados viram **ruído**.
+
+## Como funciona o DBSCAN?
+
+O DBSCAN tem dois parâmetros:
+
+- **eps** (ε): o raio de busca — quão longe olhar ao redor de cada
+  ponto
+- **minPts**: quantos vizinhos mínimos para considerar um ponto como
+  "núcleo" de um grupo
+
+A lógica:
+
+1.  Para cada ponto, conte quantos vizinhos estão dentro de `eps`
+2.  Se tem pelo menos `minPts` vizinhos → é um **ponto de núcleo**
+3.  Vizinhos de pontos de núcleo são **absorvidos** no mesmo grupo
+4.  Pontos isolados (sem vizinhos suficientes) → **ruído** (cluster 0)
+
+**Analogia da festa:** imagine uma festa onde as pessoas formam
+rodinhas. O DBSCAN olha ao redor de cada pessoa: se ela está cercada
+por pelo menos 4 pessoas num raio de 2 metros, ela é "popular" (ponto
+de núcleo). As pessoas ao redor dela entram na mesma rodinha. Quem está
+sozinho num canto da festa sem ninguém por perto é **ruído** — não
+pertence a nenhuma rodinha.
+
+## Escolhendo eps: gráfico k-distância
+
+Como escolher `eps`? Uma técnica comum é o **gráfico k-distância**:
+
+1.  Para cada ponto, calcule a distância até o 4º vizinho mais próximo
+    (k=4 é uma escolha comum)
+2.  Ordene essas distâncias da menor para a maior
+3.  Procure o **"cotovelo"** — o ponto onde as distâncias começam a
+    crescer rapidamente
+
+O cotovelo sugere um bom valor de `eps`. Pontos à direita do cotovelo
+são outliers — suas distâncias explodem.
+
+## Vantagens e desvantagens do DBSCAN
+
+| Critério | K-Means | DBSCAN |
+|---|---|---|
+| **Precisa escolher K?** | ✅ Sim | ❌ Não (descobre sozinho) |
+| **Clusters esféricos** | Excelente | Funciona, mas não é o forte |
+| **Clusters irregulares** | ❌ Falha | ✅ Excelente |
+| **Detecta outliers** | ❌ Força todos em grupos | ✅ Classifica como ruído |
+| **Escalabilidade** | Rápido | Mais lento em datasets grandes |
+| **Parâmetros** | Só K | eps + minPts (mais sensível) |
+
+**Regra de bolso:** comece com K-Means (simples e rápido). Se os
+clusters parecerem forçados ou se houver muitos outliers suspeitos,
+teste o DBSCAN.
+
+## DBSCAN no nosso dataset
+
+Para indicadores socioeconômicos de países, os clusters tendem a ser
+relativamente esféricos (países desenvolvidos formam uma "bolha" no
+espaço, países em crise formam outra). Então o K-Means funciona bem
+aqui.
+
+O DBSCAN ainda é útil para **detectar outliers** — países que não se
+encaixam bem em nenhum grupo. Por exemplo, **Singapura** (PIB alto mas
+tamanho minúsculo) ou **Catar** (PIB altíssimo mas indicadores de
+saúde medianos) podem ser classificados como ruído pelo DBSCAN.
+
+---
+
+# PCA: Redução de Dimensionalidade
+
+## O problema das muitas dimensões
+
+Temos **8 variáveis** por país. Para visualizar tudo de uma vez,
+precisaríamos de um gráfico em **8 dimensões** — impossível!
+
+Gráficos 2D mostram só 2 variáveis por vez. Perdemos a visão do
+conjunto — precisamos olhar dezenas de gráficos para entender a relação
+entre todas as variáveis.
+
+> **PCA** (Análise de Componentes Principais) resolve isso: "comprime"
+> 8 variáveis em 2 ou 3 **componentes principais** que capturam a maior
+> parte da informação.
+
+## O que é PCA? (intuição)
+
+PCA encontra as **direções de maior variação** nos dados:
+
+- **PC1** (1º componente): a direção onde os países **mais diferem**
+  entre si — o eixo que maximiza a variância
+- **PC2** (2º componente): a direção **perpendicular** ao PC1 com a 2ª
+  maior variação
+- **PC3, PC4, ...**: cada um captura variação adicional, cada vez menor
+
+**Analogia da fotografia:** imagine que você quer fotografar um carro
+3D com uma câmera 2D. De qual ângulo você tira a foto para capturar o
+**máximo de informação**?
+
+- De frente: você vê largura e altura, mas perde a profundidade
+- De lado: você vê comprimento e altura, mas perde a largura
+- De cima: você vê largura e comprimento, mas perde a altura
+
+O PCA encontra automaticamente os **dois melhores ângulos** — as duas
+"fotos" que, juntas, capturam a maior parte do carro. No nosso caso, as
+duas "fotos" são PC1 e PC2, e juntas elas capturam ~70-80% da
+informação dos 8 indicadores.
+
+## Variância explicada: quantos componentes reter?
+
+Cada componente principal captura uma **porcentagem** da variância
+total. A tabela de variância explicada mostra:
+
+| Componente | Variância (%) | Acumulada (%) |
+|---|---|---|
+| PC1 | ~50% | ~50% |
+| PC2 | ~20% | ~70% |
+| PC3 | ~10% | ~80% |
+| PC4 | ~7% | ~87% |
+| PC5-8 | ~13% | 100% |
+
+O **scree plot** é o gráfico de barras da variância por componente, com
+uma linha de variância acumulada. A regra prática: reter componentes
+até atingir **80% acumulado**. Se PC1 + PC2 já explicam ~70%, podemos
+visualizar tudo em 2D com perda mínima.
+
+## Os países no espaço PCA (biplot)
+
+Projetando cada país nos eixos PC1 × PC2, obtemos um gráfico 2D onde:
+
+- Países **próximos** no gráfico têm perfis socioeconômicos **parecidos**
+- Países **distantes** têm perfis **diferentes**
+
+Tipicamente, o PC1 separa países **ricos vs. pobres** (captura PIB,
+renda, expectativa de vida — tudo junto). O PC2 captura uma segunda
+dimensão, como **abertura comercial** (exportações/importações) ou
+**perfil demográfico** (fertilidade vs. envelhecimento).
+
+## Loadings: o que cada componente representa?
+
+Os **loadings** mostram quanto cada variável original **contribui** para
+cada componente:
+
+| Variável | Loading no PC1 | Loading no PC2 |
+|---|---|---|
+| child_mort | Forte negativo | Fraco |
+| gdpp | Forte positivo | Fraco |
+| income | Forte positivo | Fraco |
+| life_expec | Forte positivo | Fraco |
+| exports | Fraco | Forte positivo |
+| health | Moderado positivo | Moderado negativo |
+
+**Como ler:**
+
+- **PC1** tem loadings fortes em PIB, renda e expectativa de vida
+  (positivos) e mortalidade infantil (negativo) → PC1 = **"nível de
+  desenvolvimento"**
+- **PC2** tem loadings fortes em exportações/importações → PC2 =
+  **"abertura comercial"**
+
+**Analogia:** é como se o PCA descobrisse sozinho que existem duas
+dimensões principais que separam os países: quão ricos eles são (PC1) e
+quão abertos ao comércio eles são (PC2).
+
+## PCA com tidymodels
+
+```r
+rec_pca <- recipe(~ ., data = countries |> select(-country)) |>
+  step_normalize(all_numeric_predictors()) |>
+  step_pca(all_numeric_predictors(), num_comp = 8)
+
+rec_pca_prep <- prep(rec_pca)
+dados_pca <- bake(rec_pca_prep, new_data = NULL)
+```
+
+O `step_pca()` faz tudo: normaliza, calcula as componentes, e retorna
+os dados projetados. O `tidy()` na recipe mostra os loadings e a
+variância explicada.
+
+---
+
+# PCA + Clusterização: O Melhor dos Dois Mundos
+
+## Visualizar clusters no espaço PCA
+
+Uma das combinações mais poderosas: usar o PCA para **visualizar** os
+clusters do K-Means em 2D.
+
+Projetamos os países no PC1 × PC2 e **colorimos por cluster**. As
+elipses de 90% mostram a "fronteira" aproximada de cada grupo no espaço
+reduzido.
+
+**Por que isso é útil?** Porque em 2D conseguimos ver:
+
+- Se os clusters estão **bem separados** (pouca sobreposição)
+- Se há **outliers** (pontos fora das elipses)
+- Se a separação faz sentido (países próximos no gráfico estão no mesmo
+  cluster)
+
+## Heatmap geral: todos os países × todos os indicadores
+
+O heatmap é a **visualização definitiva** da análise. Cada linha é um
+país, cada coluna é um indicador, e a cor mostra se o valor está acima
+(azul) ou abaixo (vermelho) da média.
+
+Os países estão **ordenados por cluster**, então as "faixas" de cor
+revelam os padrões de cada grupo:
+
+- **Cluster "em crise":** faixa vermelha em PIB/renda/expectativa de
+  vida, faixa azul em mortalidade/fertilidade
+- **Cluster "desenvolvido":** padrão oposto — azul em PIB/renda,
+  vermelho em mortalidade
+- **Cluster "emergente":** cores misturadas, intermediárias
+
+**Analogia:** o heatmap é como uma "impressão digital" de cada cluster.
+Cada grupo tem uma assinatura visual clara — e você pode bater o olho e
+dizer "esse é o grupo dos países em crise".
+
+---
+
+# Resumo e Reflexão
+
+## O que aprendemos hoje
+
+| Bloco | Técnica | Conceito-chave |
+|---|---|---|
+| 1 | **EDA + Normalização** | Escalas importam! Padronize antes de calcular distâncias |
+| 2 | **K-Means** | Agrupa em K bolhas; cotovelo e silhueta para escolher K |
+| 2b | **K-Medoids** | Centro é ponto real (medóide); mais robusto a outliers |
+| 3 | **DBSCAN** | Agrupa por densidade; detecta outliers como ruído |
+| 4 | **PCA** | Comprime muitas variáveis em poucos componentes |
+| 5 | **PCA + Clusters** | Visualiza clusters em 2D; heatmap geral |
+
+## 7 lições para levar para casa
+
+1.  **Aprendizado Não Supervisionado** não tem rótulo — o modelo
+    descobre padrões sozinho
+2.  **Normalização é obrigatória** antes de calcular distâncias — sem
+    ela, variáveis com escalas maiores dominam o agrupamento
+3.  **K-Means** é simples e rápido — mas assume clusters esféricos e é
+    sensível a outliers
+4.  **K-Medoids** usa pontos reais como centro — mais interpretável e
+    robusto
+5.  **DBSCAN** descobre K sozinho e detecta outliers — ideal quando os
+    clusters não são esféricos
+6.  **PCA** comprime muitas variáveis em poucos componentes — permite
+    visualizar dados multidimensionais em 2D
+7.  **A interpretação é do cientista** — o algoritmo agrupa, mas
+    nomear os clusters é trabalho humano
+
+## Supervisionado vs. Não Supervisionado: o ciclo se fecha
+
+Com esta aula, completamos o ciclo:
+
+- **Regressão** (Aulas 3-4): prever um número contínuo
+- **Classificação** (Aulas 5-6): prever uma categoria
+- **Clusterização** (Aula 7): descobrir grupos sem rótulo
+- **PCA** (Aula 7): reduzir dimensões para visualizar
+
+## Ponte para o futuro
+
+O aprendizado não supervisionado é a base de aplicações do mundo real:
+
+- **Segmentação de clientes** (marketing): agrupar consumidores por
+  comportamento de compra para personalizar campanhas
+- **Detecção de anomalias** (fraude): o DBSCAN identifica transações
+  "estranhas" que não se encaixam em nenhum padrão normal
+- **Sistemas de recomendação** (Netflix, Spotify): PCA reduz dimensões
+  para encontrar similaridades entre filmes ou músicas
+- **Genômica**: agrupar genes por padrão de expressão para descobrir
+  funções biológicas
+- **Próxima aula (Aula 8):** Redes Neurais e Deep Learning — o modelo
+  que aprende representações hierárquicas dos dados
+
+---
+
+# Glossário Rápido
+
+| Termo | Significado |
+|---|---|
+| **Clusterização** | Agrupar dados similares sem rótulo prévio |
+| **Centróide** | Centro de um cluster (média dos pontos) |
+| **Medóide** | Ponto real do dataset que melhor representa o cluster |
+| **WSS** | Within Sum of Squares — variância dentro dos clusters (quanto menor, melhor) |
+| **Silhueta** | Medida de quão bem um ponto está encaixado no seu cluster (-1 a +1) |
+| **Cotovelo** | Ponto no gráfico WSS×K onde a melhora diminui (sugere K ideal) |
+| **PCA** | Análise de Componentes Principais — compressão de variáveis |
+| **Loading** | Peso de cada variável original em cada componente do PCA |
+| **Scree plot** | Gráfico de variância explicada por componente |
+| **Normalização** | Transformar variáveis para média 0 e desvio 1 |
+| **Overfitting** | Modelo decora o treino mas erra no teste |
+| **Data leakage** | Vazamento de informação do teste para o treino |

@@ -1,0 +1,822 @@
+---
+title: "Roteiro de Fala — Aula 7"
+subtitle: "Clusterização e Redução de Dimensionalidade — FECAF"
+lang: pt-BR
+format:
+  docx:
+    toc: true
+    toc-depth: 2
+    highlight-style: github
+---
+
+# Roteiro de Fala — Aula 7: Aprendizado Não Supervisionado
+# Clusterização e Redução de Dimensionalidade
+
+> **Guia do professor:** o que dizer em cada slide, como explicar os
+> conceitos, e onde interagir com os gráficos interativos. Use como
+> referência — adapte ao seu estilo natural de fala.
+>
+> **Storytelling central:** Uma ONG humanitária quer ajudar os países que
+> mais precisam — mas não tem uma lista pronta de "países pobres". Ela
+> tem dados. Precisamos descobrir os grupos **sozinhos**, a partir dos
+> indicadores. A aula é a jornada de "não sabemos nada" até "esses são
+> os países prioritários".
+
+---
+
+# BLOCO A — ABERTURA (10 min)
+
+## Slide: "O que é Aprendizado Não Supervisionado?"
+
+**O que dizer:**
+
+"Nas últimas 4 aulas, a gente sempre teve uma **resposta certa**. Na
+Aula 3, o preço do imóvel. Na Aula 5, se o mandante vence ou não. Na
+Aula 6, a mesma coisa com modelos melhores.
+
+O modelo aprendia porque alguém dizia: 'a resposta é essa'. Ele errava,
+recebia uma nota, e se ajustava. Isso é o **Aprendizado Supervisionado**
+— um supervisor dá as respostas.
+
+[Aguardar o fragment]
+
+Mas hoje, a história muda. E se eu te disser que **não existe resposta
+certa**? Que ninguém nos disse quais países são 'desenvolvidos',
+'emergentes' ou 'em crise'?
+
+Imagina que você é uma ONG humanitária. Tem dados de 167 países. Quer
+ajudar quem mais precisa. Mas **não tem uma lista pronta** de quem é
+pobre. Você precisa **descobrir os grupos sozinho**, a partir dos dados.
+
+É isso que o **Aprendizado Não Supervisionado** faz."
+
+## Slide: "Supervisionado vs Não Supervisionado"
+
+**O que dizer:**
+
+"Vamos fixar a diferença com uma tabela e uma analogia.
+
+[Ler a tabela — supervisionado tem rótulo, não supervisionado não tem]
+
+[Aguardar o callout]
+
+**Analogia:** no supervisionado, é como fazer uma **prova com gabarito**.
+O professor dá as respostas, você aprende a acertar.
+
+No não supervisionado, é como ser colocado numa **cidade desconhecida
+sem mapa**. Você precisa explorar e descobrir os bairros por conta
+própria.
+
+Não é que um seja melhor que o outro — são problemas diferentes.
+Até agora, só fizemos problemas com gabarito. Hoje é a primeira vez
+que trabalhamos sem."
+
+## Slide: "O modelo NÃO recebe a resposta"
+
+**O que dizer:**
+
+"Nas Aulas 3 a 6, sempre tínhamos uma coluna chamada 'alvo':
+
+- `preco` → regressão
+- `vitoria_mandante` → classificação
+
+[Aguardar o fragment]
+
+Hoje, **não existe coluna alvo**. Temos 167 países com 8 indicadores
+— mortalidade infantil, PIB, expectativa de vida, fertilidade — mas
+**ninguém disse** quem é 'rico' ou 'pobre'.
+
+O modelo vai usar apenas a **distância** entre os países para descobrir
+os grupos. Países com valores parecidos ficam perto no espaço — e
+provavelmente pertencem ao mesmo grupo.
+
+É o equivalente a olhar pras 167 pessoas da festa e agrupar por
+aparência, sem saber quem é amigo de quem."
+
+## Slide: "Analogia: festa sem lista de convidados"
+
+**O que dizer:**
+
+"Pensa nessa situação: 167 pessoas chegam numa festa. Você precisa
+dividir em mesas. Mas não tem lista, não sabe quem conhece quem.
+
+[Aguardar o fragment]
+
+O que você faz? Olha para cada pessoa — o que ela veste, que idade
+tem, que idioma fala. Agrupa quem parece parecido na mesma mesa.
+Se alguém ficou 'no meio' de duas mesas, você move.
+
+**Isso é clusterização.** E é exatamente o que o K-Means vai fazer
+com os países — olhar para as 8 variáveis e decidir quem vai em qual
+mesa."
+
+## Slide: "Os dois pilares da aula de hoje"
+
+**O que dizer:**
+
+"O Aprendizado Não Supervisionado tem duas grandes famílias:
+
+**Clusterização** — descobrir grupos. K-Means, K-Medoids, DBSCAN.
+A pergunta é: *quais países formam grupos naturais?*
+
+**Redução de Dimensionalidade** — comprimir muitas variáveis em poucas.
+PCA é o principal. A pergunta é: *como visualizar 8 variáveis num
+gráfico que cabe numa tela?*
+
+Hoje vamos usar **as duas**. Primeiro agrupamos os países. Depois
+usamos PCA para visualizar o resultado."
+
+## Slide: "Onde o Aprendizado Não Supervisionado é usado?"
+
+**O que dizer:**
+
+"Isso não é só teoria. Está em todo lugar:
+
+- **Netflix** usa clusterização para descobrir que você e outras pessoas
+  gostam das mesmas séries — e te recomendar o que elas assistiram.
+- **Bancos** usam para detectar fraude: uma transação que não se
+  encaixa em nenhum grupo 'normal' é suspeita.
+- **Marketing** segmenta clientes por comportamento de compra.
+
+[Aguardar o fragment]
+
+E na aula de hoje: vamos usar para **ajudar uma ONG a priorizar ajuda
+humanitária** — sem ninguém dizer quais países são 'pobres'. O modelo
+descobre sozinho."
+
+## Slide: "Recap rápido: o que já sabemos"
+
+**O que dizer:**
+
+"Antes de começar, vamos relembrar conceitos das aulas passadas que
+**voltam** hoje:
+
+- **Normalização** (Aula 3): padronizar variáveis para a mesma escala.
+  Hoje é **obrigatório** antes de calcular distâncias.
+- **Overfitting** (todas as aulas): o modelo decorar o treino. Na
+  clusterização, é escolher K grande demais — cada país vira seu
+  próprio cluster.
+- **Pipeline tidymodels** (Aula 5-6): a mesma recipe que usamos para
+  preparar dados funciona aqui.
+
+[Aguardar o callout]
+
+O que **muda** é a avaliação. No supervisionado, tínhamos métricas
+objetivas — acurácia, AUROC. No não supervisionado, a avaliação é mais
+subjetiva. Usamos ferramentas como cotovelo e silhueta, mas **quem
+decide se o agrupamento faz sentido é o cientista**."
+
+## Slide: "A pergunta mudou (de novo)"
+
+**O que dizer:**
+
+"Cada aula teve sua pergunta:
+
+- Aula 3: como prever o preço de um imóvel?
+- Aula 5: o mandante vence?
+- Aula 6: qual modelo é melhor?
+
+Hoje: **sem rótulo, como agrupar países com perfis parecidos?** E
+**como visualizar 8 variáveis num gráfico 2D?**
+
+Vamos responder as duas."
+
+---
+
+# BLOCO B — O DATASET E EDA (10 min)
+
+## Slide: "O dataset: indicadores de desenvolvimento"
+
+**O que dizer:**
+
+"Nosso dataset tem **167 países** com **8 indicadores** do UNICEF e do
+Banco Mundial:
+
+- Mortalidade infantil, PIB per capita, expectativa de vida,
+  fertilidade, importações, exportações, gastos com saúde, inflação.
+
+[Rodar o código — mostrar o `glimpse`]
+
+Note algo importante: **não existe coluna 'classe' ou 'grupo'**. O
+modelo vai ter que descobrir sozinho.
+
+[Aguardar]
+
+Percebam também que as escalas são muito diferentes: mortalidade vai
+de 2 a 190. PIB vai de 231 a 80 mil. Isso **importa muito** — e é a
+primeira coisa que vamos resolver."
+
+## Slide: "As 8 variáveis" (tabela)
+
+**O que dizer:**
+
+"Cada variável mede um aspecto diferente do desenvolvimento de um país.
+Juntas, elas formam uma 'impressão digital' socioeconômica.
+
+Mas notem: mortalidade infantil vai de **2 a 190**. PIB per capita vai
+de **231 a 80.600**.
+
+[Aguardar o fragment]
+
+Se calcularmos a distância entre dois países com esses valores crus,
+o PIB vai **dominar completamente** o cálculo — as outras variáveis
+serão praticamente ignoradas. É como comparar jogadores de futebol
+usando gols e faltas: se faltas vai de 0 a 150 e gols de 0 a 30,
+as faltas sempre vão pesar mais.
+
+**Solução:** padronizar todas para a mesma escala."
+
+## Slide: "EDA: distribuições" (violin plots interativos)
+
+**O que dizer:**
+
+"Antes de modelar, sempre olhamos as distribuições. Passe o mouse nos
+gráficos!
+
+[Usar o Plotly — hover sobre os violinos]
+
+Notem algumas coisas:
+
+- **Mortalidade infantil**: parece bimodal — muitos países com baixa
+  mortalidade e um grupo com alta. Isso já sugere **pelo menos dois
+  grupos naturais**.
+- **PIB per capita**: distribuição muito enviesada à direita. Poucos
+  países muito ricos, muitos com PIB baixo. **Luxemburgo** é um
+  outlier claro.
+- **Fertilidade**: também bimodal — países desenvolvidos com ~1.5
+  filhos, países em desenvolvimento com ~5."
+
+## Slide: "EDA: correlações" (heatmap interativo)
+
+**O que dizer:**
+
+"Agora vamos ver como as variáveis se relacionam entre si.
+
+[Hover sobre o heatmap — mostrar correlações específicas]
+
+Algumas correlações são muito fortes:
+
+- Mortalidade infantil ↔ fertilidade: **+0.86** — países com muitos
+  filhos tendem a ter alta mortalidade. Faz sentido.
+- PIB ↔ renda: **+0.84** — óbvio, medem a mesma coisa.
+- Expectativa de vida ↔ mortalidade: **-0.89** — quanto mais se vive,
+  menos crianças morrem.
+
+[Aguardar]
+
+Essas correlações fortes são **boas notícias para o PCA** mais
+adiante — variáveis correlacionadas carregam informação redundante,
+e o PCA consegue 'comprimir' isso."
+
+---
+
+# BLOCO C — NORMALIZAÇÃO (5 min)
+
+## Slide: "Por que as escalas importam?"
+
+**O que dizer:**
+
+"Clusterização agrupa por **distância** entre os pontos. Se uma variável
+tem valores muito maiores, ela **domina** a distância.
+
+Imagina: PIB varia de 231 a 80.600 (amplitude de 80 mil). Expectativa
+de vida varia de 50 a 83 (amplitude de 33).
+
+Sem normalizar, a distância entre dois países seria praticamente só
+a diferença de PIB. Mortalidade, fertilidade, saúde — tudo seria
+ignorado.
+
+**É como pesar uma pessoa e um elefante na mesma balança e usar o peso
+total pra decidir se eles são 'parecidos'. O peso do elefante domina
+tudo.**"
+
+## Slide: "Receita de pré-processamento"
+
+**O que dizer:**
+
+"Usamos uma **recipe** do tidymodels — a mesma ferramenta das Aulas 5
+e 6. O `step_normalize()` transforma cada variável para ter **média 0**
+e **desvio padrão 1**.
+
+[Rodar o código]
+
+Olha a tabela resultado: todas as variáveis agora têm média ≈ 0 e
+desvio ≈ 1. Elas estão na **mesma moeda**. Agora, quando calcularmos
+distâncias, mortalidade e PIB têm o mesmo peso na decisão."
+
+---
+
+# BLOCO D — K-MEANS (20 min)
+
+## Slide: "O que é K-Means? (intuição)"
+
+**O que dizer:**
+
+"K-Means é o algoritmo de clusterização mais usado no mundo. E a
+lógica é surpreendentemente simples.
+
+**Analogia dos ímãs:** imagina que você joga 3 ímãs numa mesa cheia de
+clips de metal. Cada clipe é atraído pelo ímã mais próximo. Depois que
+todos estão agrupados, você move cada ímã para o **centro** da sua
+turma de clips. Aí os clips se reajustam — alguns podem mudar de ímã
+porque a posição mudou. Repita até estabilizar.
+
+É exatamente isso que o K-Means faz:
+
+1. Joga K pontos aleatórios (centróides)
+2. Cada país vai pro centróide mais próximo
+3. Recalcula o centróide como a média do grupo
+4. Repete 2 e 3 até ninguém mais mudar"
+
+## 🎮 PLAYGROUND: demonstração ao vivo
+
+**O que dizer:**
+
+"Vamos **ver isso acontecer** no playground de clusterização.
+
+[Abrir o cluster-playground.html no navegador]
+
+Olhem: esses pontos são os 'países' no espaço PCA. Vou clicar em
+**Executar** e vocês vão ver o K-Means em ação:
+
+1. Os centróides aparecem (os X grandes)
+2. Cada ponto vai pro centróide mais próximo (cores mudam)
+3. Os centróides se movem pro centro do grupo
+4. Repete até estabilizar
+
+[Clicar em Executar com K=3]
+
+Viram? Em poucas iterações, o algoritmo convergiu. Os 3 grupos naturais
+apareceram sozinhos.
+
+Agora vou mudar K para 5. O que vocês acham que vai acontecer?
+
+[Mudar K para 5, executar]
+
+Agora temos 5 grupos. Faz sentido? Ou será que estamos 'dividindo
+demais'? É pra isso que serve o método do cotovelo."
+
+## Slide: "K-Means com tidyclust"
+
+**O que dizer:**
+
+"No código, é assim:
+
+[Rodar o código]
+
+O `k_means(num_clusters = 3)` especifica o modelo. O `fit()` ajusta
+nos dados. O `extract_cluster_assignment()` retorna qual cluster cada
+país pertence.
+
+Olhem o resultado: 3 clusters, com tamanhos diferentes. Mas será que
+K=3 é a quantidade ideal?"
+
+## Slide: "Visualizando os 3 clusters" (Plotly)
+
+**O que dizer:**
+
+"Vamos plotar os países em Mortalidade Infantil × PIB per capita,
+coloridos por cluster.
+
+[Hover sobre os pontos — mostrar países específicos]
+
+Passe o mouse nos pontos! Vejam:
+
+- Cluster 1 (vermelho): países com **alta mortalidade e baixo PIB** —
+  Haiti, Nigéria, Chade. Faz sentido que estejam juntos.
+- Cluster 2 (verde): **valores intermediários** — Brasil, Tailândia,
+  México.
+- Cluster 3 (azul): **baixa mortalidade e alto PIB** — EUA, Japão,
+  Alemanha.
+
+O modelo **descobriu isso sozinho**. Ninguém disse que o Haiti era
+'pobre'. Ele olhou para os 8 indicadores e percebeu que esses países
+formam um grupo natural."
+
+## Slide: "Método do Cotovelo"
+
+**O que dizer:**
+
+"Mas como escolher K? O **método do cotovelo** testa vários valores e
+procura onde a 'melhora' diminui.
+
+**Analogia:** imagina que você organiza uma festa e precisa dividir os
+convidados em mesas. 2 mesas? Cada mesa fica muito cheia. 10 mesas?
+Cada mesa fica vazia — desperdício. O 'cotovelo' é o ponto onde
+adicionar mais mesas **não melhora muito**.
+
+[Rodar o código — mostrar o gráfico interativo]
+
+[Aguardar]
+
+Passe o mouse nos pontos! Vejam que de K=2 pra K=3 a queda é enorme.
+De K=3 pra K=4, ainda melhora bastante. Mas a partir de K=4, a curva
+fica **suave** — adicionar mais clusters não ajuda muito.
+
+K=4 parece o cotovelo. Mas vamos confirmar com a silhueta."
+
+## Slide: "Silhueta (Silhouette)"
+
+**O que dizer:**
+
+"A silhueta mede, para cada país: quão **próximo** está dos outros
+países do **mesmo** cluster, e quão **distante** está dos países do
+cluster **vizinho**.
+
+**Analogia:** imagina que você está numa festa dividida em grupos. Se
+você está cercado de pessoas do seu grupo e longe dos outros, sua
+silhueta é alta (+1). Se está no meio de dois grupos sem saber aonde
+pertence, é próxima de 0. Se está mais parecido com o grupo vizinho,
+é negativa (-1) — você está no grupo errado!
+
+[Rodar o código — mostrar o gráfico]
+
+A silhueta média está em torno de **X.XX** [ler o valor]. Acima de 0.5
+é considerado bom agrupamento. Abaixo de 0.3, os clusters estão
+misturados demais."
+
+## 🎮 PLAYGROUND: cotovelo e silhueta ao vivo
+
+**O que dizer:**
+
+"Voltando ao playground, vejam o gráfico do cotovelo aqui embaixo.
+
+[Mudar K no slider e mostrar como a curva muda]
+
+Cada vez que eu mudo K, o WSS desce — mais clusters = menos variância.
+Mas o cotovelo está em K=3 ou 4. E a silhueta mostra que os clusters
+estão bem definidos."
+
+## Slide: "Perfil dos clusters: quem é quem?"
+
+**O que dizer:**
+
+"Agora a pergunta mais importante: **o que cada grupo representa?**
+
+[Rodar o código — mostrar o heatmap interativo]
+
+Passe o mouse nas células! Vejam:
+
+- **Cluster 'em crise':** mortalidade infantil ~70, PIB ~2.000,
+  expectativa de vida ~60. São os países que mais precisam de ajuda.
+- **Cluster 'emergente':** mortalidade ~25, PIB ~8.000, expectativa
+  ~72. Brasil, China, Índia.
+- **Cluster 'desenvolvido':** mortalidade ~6, PIB ~35.000, expectativa
+  ~80. EUA, Japão, Alemanha.
+
+**Esses valores são reais** — não são padronizados. É assim que a ONG
+consegue dizer: 'o cluster 1 tem mortalidade 10x maior que o cluster 3'.
+"
+
+## Slide: "Países-alvo: quem precisa de ajuda?"
+
+**O que dizer:**
+
+"Filtrando o cluster mais vulnerável e ordenando por mortalidade
+infantil:
+
+[Mostrar a tabela]
+
+Haiti, Chade, Nigéria, Somália... O modelo **descobriu isso sozinho**.
+Ninguém disse que esses países eram 'pobres'. Ele olhou para os 8
+indicadores e percebeu que formam um grupo natural.
+
+[Aguardar o callout]
+
+E essa é a beleza do Aprendizado Não Supervisionado: o modelo encontra
+padrões que nós, humanos, podemos não perceber olhando para os dados
+crus."
+
+---
+
+# BLOCO E — K-MEDOIDS (10 min)
+
+## Slide: "K-Means vs K-Medoids: qual a diferença?"
+
+**O que dizer:**
+
+"O K-Means usa a **média** como centro do cluster. O problema? A média
+é **sensível a outliers**. Um único país extremo — como Luxemburgo com
+PIB de 80.600 — pode puxar o centróide e distorcer o grupo inteiro.
+
+**Analogia:** imagina uma sala com 10 pessoas normais e 1 bilionário.
+A 'renda média' da sala vai ser alta — mas não representa ninguém.
+
+O **K-Medoids** resolve isso: em vez de usar a média, ele escolhe um
+**ponto real** do dataset como centro. Esse ponto é o **medóide**."
+
+## Slide: "K-Medoids na prática"
+
+**O que dizer:**
+
+"[Rodar o código]
+
+O PAM retorna os **medóides** — os países que melhor representam cada
+cluster. Olhem a tabela:
+
+- Cluster 'em crise' → medóide: **[país]**
+- Cluster 'emergente' → medóide: **[país]**
+- Cluster 'desenvolvido' → medóide: **[país]**
+
+Esses são países **reais** que funcionam como 'embaixadores' do grupo.
+Se alguém perguntar 'como é um país típico do cluster 1?', você diz:
+'olhe para [país]'."
+
+## Slide: "K-Means vs K-Medoids: visualização"
+
+**O que dizer:**
+
+"Vamos comparar os dois lado a lado.
+
+[Mostrar o gráfico com facets — hover nos pontos]
+
+Os agrupamentos são parecidos? K-Medoids tende a ser mais **robusto**
+a outliers — países extremos têm menos influência.
+
+[Aguardar o resultado de concordância]
+
+Quantos países estão no mesmo cluster nos dois métodos? Se for alto
+(>80%), o resultado é **robusto**. Se for baixo, os outliers estão
+influenciando demais."
+
+---
+
+# BLOCO F — DBSCAN (10 min)
+
+## Slide: "K-Means assume clusters redondos — e se não forem?"
+
+**O que dizer:**
+
+"K-Means e K-Medoids encontram clusters **esféricos** — bolhas no
+espaço. Mas e se os dados formarem **formas irregulares** — um anel,
+uma espiral?
+
+**Analogia:** imagina cidades distribuídas ao longo de uma costa. Elas
+formam uma **linha curva**, não bolhas. K-Means tentaria forçar essa
+linha em grupos redondos — e faria um trabalho ruim.
+
+Aí entra o **DBSCAN** — ele agrupa por **densidade**, não por distância
+ao centro."
+
+## 🎮 PLAYGROUND: DBSCAN ao vivo
+
+**O que dizer:**
+
+"Vamos ver isso no playground!
+
+[Mudar para o dataset 'Anel + Centro']
+
+Olhem: esses dados formam um anel com um ponto no centro. K-Means
+não consegue separar isso direito.
+
+[Mudar para DBSCAN]
+
+Agora com DBSCAN: ele encontra o anel como um cluster e o centro como
+outro. Os pontos isolados viram **ruído** (cinza).
+
+[Mudar eps e minPts]
+
+Vejam como eps e minPts afetam o resultado. Se eps for muito pequeno,
+tudo vira ruído. Se for muito grande, tudo vira um cluster só."
+
+## Slide: "K-Means vs DBSCAN: visualização"
+
+**O que dizer:**
+
+"Voltando aos países:
+
+[Mostrar comparação — hover nos pontos]
+
+O DBSCAN detectou **ruído** — países que o K-Means agrupou à força.
+Mas para este dataset, os clusters são relativamente esféricos, então
+o K-Means funciona bem.
+
+**Regra de bolso:** comece com K-Means. Se os clusters parecerem
+forçados ou houver muitos outliers, teste o DBSCAN."
+
+---
+
+# BLOCO G — PCA (15 min)
+
+## Slide: "O problema das muitas dimensões"
+
+**O que dizer:**
+
+"Temos **8 variáveis** por país. Para visualizar tudo, precisaríamos de
+um gráfico em **8 dimensões** — impossível!
+
+Gráficos 2D mostram só 2 variáveis por vez. Perdemos a visão do
+conjunto.
+
+O **PCA** resolve isso: 'comprime' 8 variáveis em 2 componentes que
+capturam a maior parte da informação."
+
+## Slide: "O que é PCA? (intuição)"
+
+**O que dizer:**
+
+"**Analogia da fotografia:** imagina que você quer fotografar um carro
+3D com uma câmera 2D. De qual ângulo você tira a foto para capturar o
+**máximo de informação**?
+
+- De frente: vê largura e altura, mas perde profundidade.
+- De lado: vê comprimento e altura, mas perde largura.
+
+O PCA encontra automaticamente os **dois melhores ângulos** — as duas
+'fotos' que, juntas, capturam a maior parte do carro.
+
+No nosso caso: as duas 'fotos' são PC1 e PC2, e juntas capturam ~70%
+da informação dos 8 indicadores."
+
+## Slide: "Scree Plot"
+
+**O que dizer:**
+
+"O **scree plot** mostra quanto cada componente captura da variância
+total.
+
+[Hover nas barras — mostrar percentuais]
+
+PC1 captura ~X%. PC2 captura ~Y%. Juntos, ~Z%.
+
+A regra prática: reter componentes até **80% acumulado**. Se PC1 + PC2
+já explicam 70%, podemos visualizar em 2D com perda mínima."
+
+## Slide: "Países no espaço PCA (biplot)"
+
+**O que dizer:**
+
+"Agora o momento mais bonito da aula: todos os 167 países num gráfico
+2D.
+
+[Hover sobre os pontos — mostrar países específicos]
+
+Passe o mouse! Países **próximos** no gráfico têm perfis parecidos.
+Países **distantes** têm perfis diferentes.
+
+Vejam: os países europeus ficam juntos num canto. Os africanos em
+outro. É como se o PCA descobrisse sozinho que existem 'bairros' no
+mapa de desenvolvimento mundial."
+
+## Slide: "Loadings: o que cada componente representa?"
+
+**O que dizer:**
+
+"Os **loadings** mostram quanto cada variável contribui para cada
+componente.
+
+[Hover nas barras]
+
+PC1 tem loadings fortes em PIB, renda e expectativa de vida
+(positivos) e mortalidade infantil (negativo). Então PC1 é basicamente
+**'nível de desenvolvimento'**.
+
+PC2 tem loadings fortes em exportações/importações. Então PC2 é
+basicamente **'abertura comercial'**.
+
+O PCA **descobriu sozinho** as duas dimensões principais que separam
+os países: quão ricos são e quão abertos ao comércio são."
+
+---
+
+# BLOCO H — PCA + CLUSTERS (10 min)
+
+## Slide: "Clusters no espaço PCA"
+
+**O que dizer:**
+
+"Agora combinamos as duas técnicas: usamos o PCA para **visualizar**
+os clusters do K-Means em 2D.
+
+[Hover nos pontos — mostrar clusters coloridos com elipses]
+
+As elipses mostram a 'fronteira' de cada cluster. Países dentro da
+mesma elipse têm perfis parecidos.
+
+Vejam como os clusters estão **bem separados** no espaço PCA — pouca
+sobreposição. Isso confirma que o K-Means encontrou grupos legítimos."
+
+## Slide: "Heatmap: todos os países × todos os indicadores"
+
+**O que dizer:**
+
+"Por fim, o **heatmap definitivo** — a visualização que resume tudo.
+
+[Hover nas células — mostrar país, variável e cluster]
+
+Cada linha é um país. Cada coluna é um indicador. A cor mostra se o
+valor está acima (azul) ou abaixo (vermelho) da média.
+
+Os países estão **ordenados por cluster**. Vejam as 'faixas' de cor:
+
+- O cluster 'em crise' tem faixa **vermelha** em PIB e renda, **azul**
+  em mortalidade e fertilidade.
+- O cluster 'desenvolvido' tem o padrão oposto.
+- O cluster 'emergente' fica no meio.
+
+**É como uma impressão digital de cada grupo.** Você bate o olho e sabe
+qual cluster é qual."
+
+---
+
+# BLOCO I — FECHAMENTO (5 min)
+
+## Slide: "Resumo"
+
+**O que dizer:**
+
+"Vamos recapitular o ciclo completo da aula:
+
+1. **Não temos rótulo** — o modelo descobre padrões sozinho
+2. **Normalizamos** os dados — todas as variáveis na mesma escala
+3. **K-Means** agrupou em 3-4 clusters — cotovelo e silhueta
+   confirmaram
+4. **K-Medoids** deu resultado parecido — clusters robustos
+5. **DBSCAN** detectou alguns outliers — países que não se encaixam
+6. **PCA** comprimiu 8 variáveis em 2 — conseguimos **ver** os clusters
+7. **Heatmap** mostrou a assinatura visual de cada grupo
+
+E no fim das contas, a ONG tem sua resposta: os países do cluster mais
+vulnerável são os prioritários para ajuda."
+
+## Slide: "Supervisionado vs Não Supervisionado"
+
+**O que dizer:**
+
+"Com essa aula, completamos o ciclo do aprendizado de máquina:
+
+- **Regressão** (Aulas 3-4): prever um número
+- **Classificação** (Aulas 5-6): prever uma categoria
+- **Clusterização** (Aula 7): descobrir grupos sem rótulo
+- **PCA** (Aula 7): reduzir dimensões para visualizar
+
+No supervisionado, o modelo aprende **'dado X, qual é Y?'**.
+No não supervisionado, o modelo responde **'quais X são parecidos?'**.
+
+São ferramentas diferentes para problemas diferentes."
+
+## Slide: "Ponte para o futuro"
+
+**O que dizer:**
+
+"O aprendizado não supervisionado é a base de muitas aplicações reais:
+
+- **Segmentação de clientes** no marketing
+- **Detecção de anomalias** em fraudes bancárias
+- **Sistemas de recomendação** como Netflix e Spotify
+- **Genômica** — agrupar genes por padrão de expressão
+
+Na próxima aula, vamos para **Redes Neurais e Deep Learning** — o
+modelo que aprende representações hierárquicas dos dados. É onde a
+inteligência artificial moderna realmente começa.
+
+Até lá! 🎯"
+
+---
+
+# 📋 NOTAS PARA O PROFESSOR
+
+## Timing sugerido
+
+| Bloco | Duração | Atividade |
+|-------|---------|-----------|
+| A — Abertura | 10 min | Conceito, analogias, dataset |
+| B — EDA | 10 min | Distribuições e correlações |
+| C — Normalização | 5 min | Recipe + step_normalize |
+| D — K-Means | 20 min | Playground ao vivo + cotovelo + silhueta |
+| E — K-Medoids | 10 min | Comparação com K-Means |
+| F — DBSCAN | 10 min | Playground com dataset "anel" |
+| G — PCA | 15 min | Scree plot, biplot, loadings |
+| H — PCA + Clusters | 10 min | Visualização integrada + heatmap |
+| I — Fechamento | 5 min | Resumo + ponte |
+| **Total** | **~95 min** | |
+
+## Erros comuns dos alunos
+
+| Erro | O que acontece | Como intervir |
+|------|----------------|---------------|
+| Não normalizar antes do K-Means | PIB domina a distância | "Lembra da analogia do elefante?" |
+| Escolher K pelo erro de treino | Overfitting: cada país vira seu cluster | "Mostra o cotovelo — o que o TESTE diz?" |
+| Confundir centróide com medóide | Centróide = média (abstrato), medóide = ponto real | "Qual país é o 'embaixador' do grupo?" |
+| Interpretar clusters como causalidade | "O cluster CAUSA pobreza" | "Clusterização descreve padrões, não explica causas" |
+
+## Perguntas-gancho para usar entre seções
+
+1. "Se K-Means funciona bem, por que precisamos de K-Medoids e DBSCAN?"
+2. "O que aconteceria se não normalizássemos os dados?"
+3. "Se o modelo descobriu os grupos sozinho, como sabemos se estão certos?"
+4. "PCA comprime 8 variáveis em 2 — o que a gente perde nessa compressão?"
+5. "Se clusterização não tem 'resposta certa', como avaliamos o modelo?"
+6. "Por que o heatmap é considerado a 'visualização definitiva'?"
+
+## Fio condutor de analogias (reutilizadas ao longo da aula)
+
+| Analogia | Aparece em |
+|----------|-----------|
+| Prova com gabarito vs explorar território | Supervisionado vs Não Supervisionado |
+| Festa sem lista de convidados | Clusterização |
+| Ímãs e clips de metal | K-Means |
+| Renda média vs pessoa real | Centróide vs Medóide |
+| Mesas na festa | Escolha de K |
+| Fotografia 3D com câmera 2D | PCA |
+| Impressão digital | Heatmap / perfil de clusters |

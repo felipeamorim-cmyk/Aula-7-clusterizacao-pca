@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Aquecimento — Aula 7: Clustering e PCA</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --ink:#1C1F2A; --ink-soft:#565B6B; --paper:#F6F5F1; --paper-raised:#FFFFFF;
+    --line:#DEDBD2; --gold:#A9791F; --gold-soft:#F3E9D2; --teal:#2F5496;
+    --good:#2F6B4F; --good-soft:#E4F0E8; --bad:#A23B33; --bad-soft:#F6E4E1;
+    --serif:'Fraunces', Georgia, serif; --sans:'IBM Plex Sans', -apple-system, sans-serif;
+    --radius:3px;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --ink:#EDEBE4; --ink-soft:#B7B4AA; --paper:#17181D; --paper-raised:#1F2027;
+      --line:#33343C; --gold:#D9B463; --gold-soft:#332A18; --teal:#8FB3E0;
+      --good:#7FC79A; --good-soft:#173322; --bad:#E08A80; --bad-soft:#3A1F1C;
+    }
+  }
+  :root[data-theme="dark"]{
+    --ink:#EDEBE4; --ink-soft:#B7B4AA; --paper:#17181D; --paper-raised:#1F2027;
+    --line:#33343C; --gold:#D9B463; --gold-soft:#332A18; --teal:#8FB3E0;
+    --good:#7FC79A; --good-soft:#173322; --bad:#E08A80; --bad-soft:#3A1F1C;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--paper); color:var(--ink); font-family:var(--sans); min-height:100vh; line-height:1.5;}
+  .wrap{max-width:640px; margin:0 auto; padding:56px 24px 80px;}
+  .kicker{font-size:13px; color:var(--gold); font-weight:600; margin:0 0 10px;}
+  h1{font-family:var(--serif); font-weight:500; font-size:clamp(28px,5vw,40px); line-height:1.15; margin:0 0 14px;}
+  .sub{color:var(--ink-soft); font-size:16px; max-width:56ch; margin:0 0 32px;}
+  .card{background:var(--paper-raised); border:1px solid var(--line); border-radius:var(--radius); padding:32px; margin-bottom:20px;}
+  .btn{font-family:var(--sans); font-weight:600; font-size:15px; padding:13px 26px; border-radius:var(--radius); border:1px solid transparent; cursor:pointer;}
+  .btn:active{transform:translateY(1px);}
+  .btn-primary{background:var(--gold); color:#211A08;}
+  .btn-primary:disabled{opacity:.4; cursor:not-allowed;}
+  .btn-ghost{background:transparent; border-color:var(--line); color:var(--ink);}
+  .btn-row{display:flex; gap:12px; justify-content:flex-end; margin-top:8px;}
+
+  .progress-track{height:3px; background:var(--line); border-radius:3px; margin-bottom:10px; overflow:hidden;}
+  .progress-fill{height:100%; background:var(--gold); transition:width .25s ease;}
+  .progress-label{font-size:13px; color:var(--ink-soft); margin-bottom:28px; font-weight:500;}
+
+  .q-prompt{font-family:var(--serif); font-size:22px; line-height:1.35; margin:0 0 24px; font-weight:500;}
+  .opt{display:flex; align-items:flex-start; gap:12px; padding:14px 16px; margin-bottom:10px; border:1px solid var(--line); border-radius:var(--radius); cursor:pointer; font-size:15.5px;}
+  .opt:hover{border-color:var(--gold);}
+  .opt.selected{border-color:var(--gold); background:var(--gold-soft);}
+  .opt.correct{border-color:var(--good); background:var(--good-soft);}
+  .opt.incorrect{border-color:var(--bad); background:var(--bad-soft);}
+  .opt.locked{cursor:default;}
+  .letter{font-family:var(--serif); font-weight:600; color:var(--gold); min-width:18px;}
+
+  .feedback{margin-top:18px; padding:16px; border-radius:var(--radius); font-size:14.5px; border:1px solid var(--line); background:var(--paper);}
+  .feedback.good{border-color:var(--good); background:var(--good-soft);}
+  .feedback.bad{border-color:var(--bad); background:var(--bad-soft);}
+  .feedback b{display:block; margin-bottom:4px; font-size:14px;}
+
+  .score-block{text-align:center; padding:20px 0 8px;}
+  .score-num{font-family:var(--serif); font-size:64px; font-weight:500; margin:0; line-height:1;}
+  .score-label{color:var(--ink-soft); font-size:15px; margin-top:6px; max-width:44ch; margin-left:auto; margin-right:auto;}
+
+  footer{color:var(--ink-soft); font-size:13px; text-align:center; margin-top:40px;}
+  .hidden{display:none !important;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <section id="screen-start">
+    <p class="kicker">Aquecimento · Aula 7</p>
+    <h1>Antes de começar: o que você já sabe sobre agrupar dados?</h1>
+    <p class="sub">5 perguntas rápidas — parte recapitulando as aulas anteriores, parte pedindo pra você arriscar um palpite sobre o tema de hoje: Aprendizado Não Supervisionado. Não vale nota, é só pra aquecer.</p>
+    <div class="card">
+      <div class="btn-row" style="justify-content:flex-start;">
+        <button class="btn btn-primary" onclick="iniciar()">Começar</button>
+      </div>
+    </div>
+  </section>
+
+  <section id="screen-quiz" class="hidden">
+    <div class="progress-track"><div class="progress-fill" id="progress-fill"></div></div>
+    <p class="progress-label" id="progress-label"></p>
+    <div class="card">
+      <p class="q-prompt" id="q-prompt"></p>
+      <div id="q-options"></div>
+      <div id="feedback-box" class="feedback hidden"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn btn-primary" id="btn-next" onclick="proxima()" disabled>Próxima</button>
+    </div>
+  </section>
+
+  <section id="screen-result" class="hidden">
+    <p class="kicker">Pronto</p>
+    <h1>Vamos ver se os palpites se confirmam</h1>
+    <div class="card score-block">
+      <p class="score-num" id="score-num">0/5</p>
+      <p class="score-label" id="score-label"></p>
+    </div>
+    <div class="btn-row" style="justify-content:flex-start;">
+      <button class="btn btn-ghost" onclick="location.reload()">Fazer de novo</button>
+    </div>
+    <footer>Sem nota, sem registro — é só o aquecimento da aula de hoje.</footer>
+  </section>
+
+</div>
+
+<script>
+const QUESTOES = [
+  {
+    prompt: "Relembrando: qual era a principal diferença entre Aprendizado Supervisionado e Não Supervisionado?",
+    options: [
+      "Supervisionado usa dados maiores; Não Supervisionado usa dados menores",
+      "Supervisionado tem uma variável-alvo (rótulo) conhecida; Não Supervisionado não tem rótulo",
+      "Supervisionado é sempre mais preciso que Não Supervisionado",
+      "Não existe diferença prática, são nomes diferentes para a mesma coisa"
+    ],
+    correct: 1,
+    explanation: "No supervisionado, sabemos a 'resposta certa' (ex: vitória/derrota). No não supervisionado, o modelo descobre padrões sozinho, sem gabarito."
+  },
+  {
+    prompt: "Sem rótulo, como um algoritmo poderia decidir que dois países são 'parecidos'?",
+    options: [
+      "Comparando só o nome do país",
+      "Calculando uma distância numérica entre as variáveis dos dois países",
+      "Perguntando a um humano qual país é mais parecido",
+      "Escolhendo aleatoriamente e torcendo pra funcionar"
+    ],
+    correct: 1,
+    explanation: "Sem rótulo, a forma mais natural é medir a 'distância' entre os países no espaço das variáveis. Países com valores parecidos ficam próximos — e provavelmente pertencem ao mesmo grupo."
+  },
+  {
+    prompt: "Se você tivesse que dividir 167 países em 3 grupos sem ninguém te dizer o critério, qual variável você usaria PRIMEIRO para separá-los?",
+    options: [
+      "PIB per capita (gdpp)",
+      "Taxa de exportações",
+      "Gastos com saúde (% do PIB)",
+      "Não saberia por onde começar"
+    ],
+    correct: 0,
+    explanation: "O PIB per capita é a variável que mais diferencia países: separa ricos de pobres de forma clara. Não é à toa que o PCA geralmente coloca PIB como principal componente."
+  },
+  {
+    prompt: "Por que é importante padronizar (normalizar) as variáveis ANTES de calcular distâncias entre pontos?",
+    options: [
+      "Porque os algoritmos não funcionam com dados brutos",
+      "Porque sem normalização, variáveis com escalas maiores dominam o cálculo de distância",
+      "Porque a normalização remove outliers automaticamente",
+      "Não é importante, as distâncias são as mesmas com ou sem normalização"
+    ],
+    correct: 1,
+    explanation: "PIB vai de 231 a 80.600, mortalidade vai de 2 a 190. Sem normalizar, o PIB dominaria completamente a distância — as outras variáveis seriam praticamente ignoradas."
+  },
+  {
+    prompt: "Previsão: se você agrupar 167 países por indicadores socioeconômicos, quantos grupos 'naturais' você acha que vão aparecer?",
+    options: [
+      "2 grupos: ricos e pobres",
+      "3 a 4 grupos: desenvolvido, emergente, em crise (e talvez um intermediário)",
+      "10+ grupos: cada região do mundo forma o seu",
+      "Nenhum grupo — os países são todos muito parecidos"
+    ],
+    correct: 1,
+    explanation: "Com indicadores socioeconômicos, a literatura sugere 3-4 grupos naturais. Hoje vamos descobrir se o algoritmo chega na mesma conclusão!"
+  }
+];
+
+let atual = 0;
+let acertos = 0;
+let travado = false;
+
+function iniciar(){
+  document.getElementById('screen-start').classList.add('hidden');
+  document.getElementById('screen-quiz').classList.remove('hidden');
+  render();
+}
+
+function render(){
+  travado = false;
+  const q = QUESTOES[atual];
+  document.getElementById('progress-label').textContent = `Pergunta ${atual+1} de ${QUESTOES.length}`;
+  document.getElementById('progress-fill').style.width = `${(atual/QUESTOES.length)*100}%`;
+  document.getElementById('q-prompt').textContent = q.prompt;
+
+  const box = document.getElementById('q-options');
+  box.innerHTML = '';
+  const letras = ['A','B','C','D'];
+  q.options.forEach((texto, i) => {
+    const row = document.createElement('div');
+    row.className = 'opt';
+    row.onclick = () => responder(i);
+    row.innerHTML = `<span class="letter">${letras[i]}</span><span>${texto}</span>`;
+    box.appendChild(row);
+  });
+
+  document.getElementById('feedback-box').classList.add('hidden');
+  document.getElementById('btn-next').disabled = true;
+  document.getElementById('btn-next').textContent = atual === QUESTOES.length - 1 ? 'Ver resultado' : 'Próxima';
+}
+
+function responder(i){
+  if(travado) return;
+  travado = true;
+  const q = QUESTOES[atual];
+  const ok = i === q.correct;
+  if(ok) acertos++;
+
+  const opts = document.querySelectorAll('#q-options .opt');
+  opts.forEach((el, idx) => {
+    el.classList.add('locked');
+    if(idx === q.correct) el.classList.add('correct');
+    else if(idx === i) el.classList.add('incorrect');
+  });
+
+  const fb = document.getElementById('feedback-box');
+  fb.classList.remove('hidden', 'good', 'bad');
+  fb.classList.add(ok ? 'good' : 'bad');
+  fb.innerHTML = `<b>${ok ? 'Boa!' : 'Não foi dessa vez.'}</b>${q.explanation}`;
+
+  document.getElementById('btn-next').disabled = false;
+}
+
+function proxima(){
+  if(atual < QUESTOES.length - 1){
+    atual++;
+    render();
+  } else {
+    mostrarResultado();
+  }
+}
+
+function mostrarResultado(){
+  document.getElementById('screen-quiz').classList.add('hidden');
+  document.getElementById('screen-result').classList.remove('hidden');
+  document.getElementById('score-num').textContent = `${acertos}/${QUESTOES.length}`;
+
+  let msg;
+  if(acertos >= 4) msg = "Excelente intuição! Você já tem uma boa base sobre agrupamento de dados. Hoje vamos confirmar isso com o algoritmo.";
+  else if(acertos >= 2) msg = "Alguns palpites bateram, outros não — é exatamente pra isso que serve o aquecimento. Bora descobrir o porquê na aula.";
+  else msg = "Bastante coisa nova pela frente hoje — ótimo ponto de partida pra prestar atenção nos porquês.";
+  document.getElementById('score-label').textContent = msg;
+}
+</script>
+</body>
+</html>
